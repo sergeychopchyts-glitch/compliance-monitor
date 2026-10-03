@@ -484,3 +484,8 @@ $RECYCLE.BIN/
 # Agent scratch notes
 agent-notes.md
 PROCESS-LOG.md
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
