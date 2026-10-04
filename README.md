@@ -145,7 +145,7 @@ dotnet run --project tools/LabelLab                            # prompt measurem
 ## Architecture
 
 ```
-src/ComplianceMonitor.Api/             HTTP only: Features/{Analyze,History,Summary}, Errors, rate limiting, health, composition root
+src/ComplianceMonitor.Api/             HTTP only: Features/{Analyze,History,Summary}, shared Contracts, Errors, rate limiting, health, composition root
 src/ComplianceMonitor.Application/     The use case: ComplianceAnalysisService, CompliancePolicy and rules, models,
                                        IAnalysisRepository and IComplianceModelGateway, provider-neutral ModelGatewayException
 src/ComplianceMonitor.Infrastructure/  Persistence/ (EF Core + SQLite, migrations), Integrations/HuggingFace/ (gateway,
@@ -154,7 +154,7 @@ src/ComplianceMonitor.Client/          Console client
 tools/LabelLab/                        Prompt measurement against live HF, including the non-production prompts
 ```
 
-Dependencies point inwards: **Api → Application ← Infrastructure**. The API references Infrastructure only to register it.
+Dependencies point inwards: **Api → Application ← Infrastructure**. The API references Infrastructure only from the composition root (`Program.cs`): dependency registration plus infrastructure startup concerns (migrations, the readiness check).
 `Application` references no ASP.NET Core, EF Core or Hugging Face code (`ArchitectureTests` checks this). Switching model provider means a new gateway in Infrastructure; the HTTP error layer only knows `ModelGatewayException`.
 
 **Why Minimal APIs.** Three endpoints don't need controllers. The handlers are thin: they bind, call the service and map the result.
@@ -169,19 +169,31 @@ dotnet tool restore
 dotnet ef migrations add <Name> --project src/ComplianceMonitor.Infrastructure --output-dir Persistence/Migrations
 ```
 
-## Production notes: deliberately deferred
+## Production considerations: deliberately deferred
 
-- **Authentication.** None is built, by design: the brief doesn't require it, and a home-grown identity system would be worse than none.
-  - Deploy behind the organisation's identity layer: OIDC/JWT at an API gateway, or `AddAuthentication().AddJwtBearer(...)` against your identity provider.
-  - Require authorisation on the analysis endpoints, e.g. `app.MapGroup("/api/v1").RequireAuthorization()`.
-- **Data handling.** Action and guideline text is sent to an external model provider. Organisations using real compliance data must approve that data flow and the provider's retention policy. Logs never include that text, the token, or provider response bodies.
-- **Secrets.** Use the platform's secret manager (Key Vault, AWS Secrets Manager, etc.), not environment variables in plain config.
-- **Migrations in production.** Run them as a deployment step with schema-change permissions and set `Database:MigrateOnStartup=false`; `/health/ready` reports pending migrations. If a process is killed mid-migration, EF Core's lock row can make the next start wait. Locally, deleting `src/ComplianceMonitor.Api/compliance.db*` resets it.
-- **Idempotency.** If the response to a successful `/analyze` is lost, a client retry stores a duplicate. Production should accept an `Idempotency-Key` header with a uniqueness guarantee.
-- **History at scale.** `limit`/`offset` slows down at large offsets; switch to keyset (cursor) pagination on `(CreatedAt, Id)`. Indexes cover the current queries: `CreatedAt`, and `(Result, CreatedAt)`.
-- **Observability.** Already in place: structured logs and trace IDs. To add: OpenTelemetry traces and metrics for model latency, failures and retries, result counts, rate-limit rejections, database latency, and cache hits and misses.
-- **Multiple instances.** The summary cache is per instance: another instance can serve a summary up to 30 s old. A shared L2 cache or a pub/sub invalidation would fix it.
+This is a 5–6 hour exercise, so these are documented, not built. The required routes `/analyze`, `/history` and `/summary` stay exactly as the brief specifies.
+
+- **Authentication and authorisation.** Integrate with the organisation's identity provider (OIDC/OAuth/JWT, or gateway-managed authentication).
+  - Authorise by policy or scope, not just "signed in": e.g. `Compliance.Analyze`, `Compliance.Read`, `Compliance.Admin`.
+  - Nothing is faked here; a home-grown identity system would be worse than none.
+- **Multi-tenancy and user identity.** Each analysis would carry `TenantId` and the actor's identity, taken from validated claims, never from the request body. Persistence, history, summary, cache keys (`analysis:{tenantId}:summary:v1`), authorisation and rate limits would all become tenant-aware.
+- **AI usage metering, quotas and cost.** `/analyze` spends an external AI resource. Track usage per user and per tenant, including provider calls *and retries*, since one analysis can cost several calls. Add quotas, monthly budgets and provider-cost alerts.
+- **Distributed, user-aware rate limiting.** The in-process concurrency limit protects a single instance. Several instances need per-user and per-tenant limits, coordinated globally or at the API gateway.
+- **Decision reproducibility.** Rows already store the provider, model ID, prompt name, threshold, raw scores and decision reason. Add the exact model revision where the provider exposes it, and a `DecisionPolicyVersion` for the application rules, so a historical decision stays explainable after code changes.
+- **Immutable audit history.** Treat stored decisions as append-only. Highly regulated settings may need restricted update permissions or tamper-evident audit storage.
+- **Production database and distributed cache.** Move from local SQLite to a managed relational database (PostgreSQL or SQL Server):
+  - with backups, point-in-time recovery, high availability, and migrations run as a deployment step (`Database:MigrateOnStartup=false`; `/health/ready` reports pending migrations);
+  - with a distributed second-level cache behind `HybridCache` once several instances share the summary;
+  - with large histories paged by keyset on `(CreatedAt, Id)` instead of `offset`.
+- **Observability.** Structured logs and trace IDs exist today. Add OpenTelemetry traces and metrics for model latency, provider errors and retries, the result and UNCLEAR distribution, 429s, cache hits and misses, and database latency, with alerts and SLOs.
+- **API versioning.** Before long-lived external consumers depend on the API, introduce an explicit versioning strategy (e.g. `/api/v1`) with compatibility, deprecation and migration policies. Health endpoints stay unversioned.
+
+Also worth knowing:
+- **Idempotency.** A lost response after a successful `/analyze` makes a client retry store a duplicate. Production would accept an `Idempotency-Key` with a uniqueness guarantee.
+- **Data handling.** Action and guideline text goes to an external model provider; organisations must approve that data flow and the provider's retention policy. Logs never contain that text, the token, or provider response bodies. Keep secrets in the platform's secret manager.
 - **Known model limits.** Measured on the extra cases:
-  - Unrelated actions are often still called COMPLIES; the "unrelated" label rarely wins.
-  - Missing requirements other than frequency, such as a missed deadline or a step not mentioned, are not caught. The temporal policy is deliberately not generalised into a rules engine.
-- **macOS:** port 5000 belongs to AirPlay Receiver, which is why the API uses 5080.
+  - Unrelated actions are often still called COMPLIES.
+  - Missing requirements other than frequency (a missed deadline, an unmentioned step) aren't caught. The temporal policy is deliberately not a rules engine.
+- **Local quirks.**
+  - macOS reserves port 5000 for AirPlay, hence 5080.
+  - If the API is killed mid-migration, EF Core's lock row can make the next start wait; deleting `src/ComplianceMonitor.Api/compliance.db*` resets it.

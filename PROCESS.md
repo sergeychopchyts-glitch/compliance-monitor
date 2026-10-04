@@ -179,3 +179,20 @@ It could still be argued that the brief case shaped the rule. My answer is that 
 **Verified at the end:** `dotnet build` with zero warnings, `dotnet test` green, `dotnet format` clean, and the Live tests 4/4 against the real model. The client demo also showed 4/4, with exit code 0.
 
 **Documented rather than built** (README, "Production notes"): authentication behind the organisation's identity provider, `Idempotency-Key`, keyset pagination, OpenTelemetry, cross-instance cache invalidation, the external data-flow approval, and migrations as a deployment step.
+
+## 5. Follow-up: final cleanups (2026-10-04)
+
+A last review pass produced seven small items. I chose to implement them and then stop restructuring:
+- the shared `AnalysisResponse` moved to `Api/Contracts`;
+- `ComplianceSettings` became `ComplianceOptions`, with the fixed limit moved to `ComplianceConstraints`;
+- the test project references Infrastructure explicitly;
+- the README's composition-root wording was corrected;
+- Infrastructure implementation types became `internal`;
+- the CI actions were bumped to current majors;
+- `ILabelStrategy` became `IPromptStrategy`.
+
+The rest of the production backlog (tenancy, metering, versioning and so on) is documented in the README, not built.
+
+The agent raised two constraints before the rename:
+- Making types `internal` needs `InternalsVisibleTo` for the tests, while the types LabelLab uses must stay `public`.
+- The stored prompt names (`combined-three-label-v1`) stay unchanged even though the C# types were renamed, because they're audit data.
