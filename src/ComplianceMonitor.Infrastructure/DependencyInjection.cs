@@ -1,4 +1,5 @@
 using ComplianceMonitor.Application.Abstractions;
+using ComplianceMonitor.Infrastructure.Caching;
 using ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
 using ComplianceMonitor.Infrastructure.Integrations.HuggingFace.Strategies;
 using ComplianceMonitor.Infrastructure.Persistence;
@@ -16,7 +17,9 @@ public static class DependencyInjection
     {
         services.AddDbContext<ComplianceDbContext>(options =>
             options.UseSqlite(configuration.GetConnectionString(ComplianceDbContext.ConnectionStringName)));
-        services.AddScoped<IAnalysisRepository, AnalysisRepository>();
+        services.AddScoped<AnalysisRepository>();
+        services.AddHybridCache();
+        services.AddScoped<IAnalysisRepository, CachedAnalysisRepository>();
 
         services.AddHuggingFaceClient(configuration);
         services.AddSingleton<ILabelStrategy, ComplianceZeroShotStrategy>();

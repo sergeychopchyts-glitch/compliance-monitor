@@ -203,6 +203,24 @@ public sealed class HistoryAndSummaryEndpointTests
     }
 
     [Fact]
+    public async Task Summary_IsCachedButNeverStaleAfterANewAnalysis()
+    {
+        using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        var (_, before, _) = await Get(factory, "/summary"); // read once, so the summary is cached
+        Assert.Equal(0, (int?)before["total"]);
+
+        factory.Model.Evaluation = FakeModelGateway.Scores(ComplianceResult.Deviates, 0.9);
+        using (var _ = await client.PostAsJsonAsync(new Uri("/analyze", UriKind.Relative), new { action = "a", guideline = "g" }, Ct))
+        {
+        }
+
+        var (_, after, _) = await Get(factory, "/summary");
+        Assert.Equal(1, (int?)after["total"]);
+        Assert.Equal(1, (int?)after["byResult"]!["DEVIATES"]);
+    }
+
+    [Fact]
     public async Task Summary_MissingResult_IsZeroNotAbsent()
     {
         using var factory = new ApiFactory();
