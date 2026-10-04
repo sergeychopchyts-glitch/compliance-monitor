@@ -24,11 +24,11 @@ public static class AnalyzeEndpoints
     }
 
     // Classification failures throw HuggingFaceException, which HuggingFaceExceptionHandler turns into
-    // ProblemDetails; nothing is saved because SaveChanges is never reached.
+    // ProblemDetails; nothing is saved because AddAsync is never reached.
     private static async Task<Results<Ok<AnalysisResponse>, ValidationProblem>> AnalyzeAsync(
         AnalyzeRequest request,
         IComplianceClassifier classifier,
-        ComplianceDbContext db,
+        AnalysisStore store,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -44,22 +44,20 @@ public static class AnalyzeEndpoints
 
         var outcome = await classifier.ClassifyAsync(action, guideline, cancellationToken);
 
-        var record = new AnalysisRecord
+        var record = await store.AddAsync(new AnalysisRecord
         {
             Action = action,
             Guideline = guideline,
             Result = outcome.Result,
             Confidence = outcome.Confidence,
-            TimestampUtc = TruncateToSeconds(timeProvider.GetUtcNow()),
+            CreatedAt = TruncateToSeconds(timeProvider.GetUtcNow()),
             Strategy = outcome.Strategy,
             DecidedBy = outcome.DecidedBy,
             ScoresJson = JsonSerializer.Serialize(outcome.Scores, JsonSerializerOptions.Web),
-        };
-        db.Analyses.Add(record);
-        await db.SaveChangesAsync(cancellationToken);
+        }, cancellationToken);
 
         return TypedResults.Ok(new AnalysisResponse(
-            record.Action, record.Guideline, record.Result, record.Confidence, record.TimestampUtc));
+            record.Action, record.Guideline, record.Result, record.Confidence, record.CreatedAt));
     }
 
     private static void AddErrors(Dictionary<string, string[]> errors, string field, string value)

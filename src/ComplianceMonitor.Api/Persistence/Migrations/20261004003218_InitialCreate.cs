@@ -21,7 +21,7 @@ namespace ComplianceMonitor.Api.Persistence.Migrations
                     Guideline = table.Column<string>(type: "TEXT", maxLength: 2000, nullable: false),
                     Result = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
                     Confidence = table.Column<double>(type: "REAL", nullable: false),
-                    TimestampUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     Strategy = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     DecidedBy = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
                     ScoresJson = table.Column<string>(type: "TEXT", nullable: false)
@@ -30,6 +30,16 @@ namespace ComplianceMonitor.Api.Persistence.Migrations
                 {
                     table.PrimaryKey("PK_Analyses", x => x.Id);
                 });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Analyses_CreatedAt",
+                table: "Analyses",
+                column: "CreatedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Analyses_Result",
+                table: "Analyses",
+                column: "Result");
         }
 
         /// <inheritdoc />

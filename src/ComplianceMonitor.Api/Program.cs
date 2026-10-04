@@ -14,6 +14,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddComplianceClassification(builder.Configuration);
 builder.Services.AddDbContext<ComplianceDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString(ComplianceDbContext.ConnectionStringName)));
+builder.Services.AddScoped<AnalysisStore>();
 
 var app = builder.Build();
 

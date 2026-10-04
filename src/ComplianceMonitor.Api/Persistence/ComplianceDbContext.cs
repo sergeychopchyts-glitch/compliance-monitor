@@ -18,8 +18,11 @@ public sealed class AnalysisRecord
 
     public double Confidence { get; set; }
 
-    /// <summary>Always <see cref="DateTimeKind.Utc"/>, whole seconds.</summary>
-    public DateTime TimestampUtc { get; set; }
+    /// <summary>
+    /// UTC, whole seconds. A <see cref="DateTime"/>, not a DateTimeOffset: EF Core's SQLite provider
+    /// cannot ORDER BY or compare DateTimeOffset.
+    /// </summary>
+    public DateTime CreatedAt { get; set; }
 
     /// <summary>Audit: the label strategy in effect.</summary>
     public required string Strategy { get; set; }
@@ -52,9 +55,12 @@ public sealed class ComplianceDbContext(DbContextOptions<ComplianceDbContext> op
         analysis.Property(a => a.Strategy).HasMaxLength(64);
 
         // SQLite stores DateTime as text without a kind; restore UTC on read so JSON ends in "Z".
-        analysis.Property(a => a.TimestampUtc).HasConversion(
+        analysis.Property(a => a.CreatedAt).HasConversion(
             v => v,
             v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+
+        analysis.HasIndex(a => a.CreatedAt);
+        analysis.HasIndex(a => a.Result);
     }
 }
 

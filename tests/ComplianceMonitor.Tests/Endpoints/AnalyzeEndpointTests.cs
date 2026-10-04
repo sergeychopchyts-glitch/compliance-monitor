@@ -54,8 +54,8 @@ public sealed class AnalyzeEndpointTests
         Assert.Equal(Guideline, row.Guideline);
         Assert.Equal(ComplianceResult.Complies, row.Result);
         Assert.Equal(0.94, row.Confidence);
-        Assert.Equal(new DateTime(2026, 10, 3, 10, 15, 0, DateTimeKind.Utc), row.TimestampUtc);
-        Assert.Equal(DateTimeKind.Utc, row.TimestampUtc.Kind);
+        Assert.Equal(new DateTime(2026, 10, 3, 10, 15, 0, DateTimeKind.Utc), row.CreatedAt);
+        Assert.Equal(DateTimeKind.Utc, row.CreatedAt.Kind);
         Assert.Equal("fake", row.Strategy);
         Assert.Equal(DecisionSource.Model, row.DecidedBy);
         Assert.Equal("""[{"label":"complies","score":0.94},{"label":"violates","score":0.06}]""", row.ScoresJson);

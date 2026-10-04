@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ComplianceMonitor.Api.Persistence.Migrations
 {
     [DbContext(typeof(ComplianceDbContext))]
-    [Migration("20261004002621_InitialCreate")]
+    [Migration("20261004003218_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -33,6 +33,9 @@ namespace ComplianceMonitor.Api.Persistence.Migrations
 
                     b.Property<double>("Confidence")
                         .HasColumnType("REAL");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("DecidedBy")
                         .IsRequired()
@@ -58,10 +61,11 @@ namespace ComplianceMonitor.Api.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Result");
 
                     b.ToTable("Analyses", (string)null);
                 });

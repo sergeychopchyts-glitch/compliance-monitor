@@ -31,6 +31,9 @@ namespace ComplianceMonitor.Api.Persistence.Migrations
                     b.Property<double>("Confidence")
                         .HasColumnType("REAL");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DecidedBy")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -55,10 +58,11 @@ namespace ComplianceMonitor.Api.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Result");
 
                     b.ToTable("Analyses", (string)null);
                 });

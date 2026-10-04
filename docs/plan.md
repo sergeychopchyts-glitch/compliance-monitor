@@ -94,12 +94,14 @@ Entity `AnalysisRecord`, table `Analyses` (EF Core migration, SQLite):
 | `Guideline` | TEXT | NOT NULL, max 2000 |
 | `Result` | TEXT | NOT NULL, `COMPLIES`/`DEVIATES`/`UNCLEAR` (enum→string converter) |
 | `Confidence` | REAL | NOT NULL, 0–1 |
-| `TimestampUtc` | TEXT | NOT NULL; converter re-applies `DateTimeKind.Utc` on read |
+| `CreatedAt` | TEXT | NOT NULL, indexed; a UTC `DateTime` (EF's SQLite provider can't order or compare `DateTimeOffset`); converter re-applies `DateTimeKind.Utc` on read |
 | `Strategy` | TEXT | NOT NULL, label strategy name (A/B/C), for audit |
 | `DecidedBy` | TEXT | NOT NULL, `MODEL`/`RULE`/`LOW_CONFIDENCE`, for audit |
 | `ScoresJson` | TEXT | NOT NULL, raw `[{label, score}]` from HF, for audit; not in API responses |
 
-History orders by `Id` desc, so there's no date sorting in SQLite. The summary is a single `GROUP BY Result`. `Database.Migrate()` runs at startup.
+`Result` is indexed. Enums are stored by their API names (`COMPLIES`, `LOW_CONFIDENCE`), not C# names.
+
+All access goes through `AnalysisStore` (no generic repository): `AddAsync`, `GetHistoryAsync(limit, offset, result)` newest first by `CreatedAt` with `Id` as tie-breaker, and `GetSummaryAsync` as one `GROUP BY Result` with missing results filled as 0. Connection string `ConnectionStrings:ComplianceMonitor` = `Data Source=compliance.db`. `Database.Migrate()` runs at startup; migrations need `dotnet tool restore` (dotnet-ef is pinned in `dotnet-tools.json`).
 
 ## 6. Test strategy
 
