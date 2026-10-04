@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      # Live tests are explicit, so this never calls Hugging Face; no token is needed or available here.
+      - name: Test
+        run: dotnet test --no-build --configuration Release
+
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --no-restore
