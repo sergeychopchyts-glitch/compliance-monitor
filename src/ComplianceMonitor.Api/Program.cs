@@ -1,9 +1,11 @@
+using ComplianceMonitor.Api.Classification;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
+builder.Services.AddComplianceClassification(builder.Configuration);
 
 var app = builder.Build();
 

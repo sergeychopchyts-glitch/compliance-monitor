@@ -1,10 +1,9 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
+using ComplianceMonitor.Tests.Infrastructure;
 
 namespace ComplianceMonitor.Tests;
 
-public sealed class SmokeTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class SmokeTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     [Fact]
     public async Task Health_ReturnsOk()

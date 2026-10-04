@@ -41,7 +41,13 @@ csharp_new_line_before_open_brace = all
 csharp_indent_case_contents = true
 csharp_space_after_keywords_in_control_flow_statements = true
 
-# Naming: private fields _camelCase, constants PascalCase, interfaces IPascalCase
+# Naming: private fields _camelCase, static readonly fields and constants PascalCase, interfaces IPascalCase
+dotnet_naming_rule.static_readonly_pascal.symbols = static_readonly_fields
+dotnet_naming_rule.static_readonly_pascal.style = pascal
+dotnet_naming_rule.static_readonly_pascal.severity = warning
+dotnet_naming_symbols.static_readonly_fields.applicable_kinds = field
+dotnet_naming_symbols.static_readonly_fields.required_modifiers = static, readonly
+
 dotnet_naming_rule.private_fields_underscore.symbols = private_fields
 dotnet_naming_rule.private_fields_underscore.style = underscore_camel
 dotnet_naming_rule.private_fields_underscore.severity = warning

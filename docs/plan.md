@@ -17,11 +17,11 @@ Shared settings in `Directory.Build.props`, versions in `Directory.Packages.prop
 1. Bind `AnalyzeRequest { action, guideline }`. Unreadable JSON → 400.
 2. Validate: both present, not whitespace, ≤ 2000 chars each, after trimming → else 400 `ValidationProblemDetails`.
 3. `IComplianceClassifier.ClassifyAsync(action, guideline, ct)`:
-   1. Read `HuggingFace:ApiToken`; missing → `ClassificationException(NotConfigured)`.
+   1. **Rule:** if the guideline says no guideline exists (short case-insensitive phrase list, `NoGuidelineRule`) → UNCLEAR, `DecidedBy=RULE`, confidence 1.0, no HTTP call.
    2. The active `ILabelStrategy` builds the HF payload (`inputs`, `candidate_labels`, `hypothesis_template`, `multi_label`).
    3. POST through a typed `HttpClient` with `AddStandardResilienceHandler`: retries 429 / 5xx / timeouts with backoff (honours `Retry-After`), never 400/401/402/403; 30 s total budget.
-   4. Non-success status → `ClassificationException` with a kind (table in 4).
-   5. Deserialize `[{label, score}]`; the strategy maps it **by label text** to `(result, confidence)` or fails as `Malformed`.
+   4. Failures throw `HuggingFaceTransientException` (timeout, network, 408, 429, 5xx) or `HuggingFacePermanentException` (other 4xx incl. 400/401/402/403, malformed body). Both carry the upstream status (table in 4).
+   5. Parse `[{label, score}]` (also legacy `{labels, scores}`), map **by label text**; the response must contain exactly the labels sent, else `Malformed`. Top score below `ConfidenceFloor` → UNCLEAR, `DecidedBy=LOW_CONFIDENCE`; otherwise the top label's result, `DecidedBy=MODEL`.
 4. `timestamp = TimeProvider.GetUtcNow()`, truncated to whole seconds (**A**, matches the brief's example).
 5. Insert `AnalysisRecord`, `SaveChangesAsync`. Only reached on success, so failures store nothing.
 6. Return 200 with the response body. (**A** 200 not 201: there is no GET-by-id to point a Location at.)
@@ -44,11 +44,12 @@ Three strategies, measured against the four cases in Step 3:
 
 The strategy is chosen by config (`HuggingFace:Strategy`), and labels and thresholds live in config too. Step 3 runs every strategy against the four cases and records the scores in `docs/label-experiments.md`. The strategy that passes the most cases with the widest margin wins. Ties are broken by fewest moving parts.
 
-**Every way UNCLEAR can arise** (never because something failed)
-1. The "unrelated" label wins (A, B).
-2. The top score is below `MinConfidence` (default 0.5).
-3. The gap between the top two scores is below `MinMargin` (default 0.1). This catches near coin-flips.
-4. Strategy C only: neither label passes its threshold, or both do.
+**Every way UNCLEAR can arise** (never because something failed; `DecidedBy` says which)
+1. `RULE`: the guideline states that no guideline exists (decided 2026-10-03; supersedes the original A1).
+2. `MODEL`: the strategy's "unrelated" label wins (A, B), or strategy C's abstain band.
+3. `LOW_CONFIDENCE`: the top score is below `HuggingFace:ConfidenceFloor` (default 0.5). At the floor is not below.
+
+`MinMargin` was dropped (2026-10-03) to keep the knobs few.
 
 A classification *failure* (HF error, unknown or missing label, empty array, score that isn't a number) is never UNCLEAR. It becomes a ProblemDetails error and nothing is stored.
 
@@ -71,13 +72,15 @@ Errors are RFC 7807 (`application/problem+json`) with `type`, `title`, `status`,
 | Failure | Status | Notes |
 |---------|--------|-------|
 | Invalid input (missing, blank, too long, bad JSON, bad `limit`) | 400 | `errors` map per field |
-| Token not configured | 503 | detail: "classifier not configured" |
 | HF 401 / 403 (auth) | 502 | our credentials are wrong; the caller can't fix it |
 | HF timeout (after retries) | 504 | |
 | HF 503 (model loading/unavailable, after retries) | 503 | `Retry-After` passed through if present |
 | HF 429 (after retries) | 503 | our quota, not the caller's (Q1); `Retry-After` passed through |
 | HF 402 (credits exhausted) | 503 | not retried; distinct `type` so operators can tell |
-| HF other 4xx/5xx, malformed body, unmappable labels | 502 | |
+| HF other 5xx / network failure (after retries) | 503 | transient |
+| HF other 4xx, malformed body, unmappable labels | 502 | permanent |
+
+A missing token is not a runtime error: `ValidateOnStart` stops the API from booting, with a message naming `HuggingFace:ApiToken`.
 | Unexpected (e.g. DB error) | 500 | generic detail |
 
 ## 5. Data model
@@ -93,6 +96,7 @@ Entity `AnalysisRecord`, table `Analyses` (EF Core migration, SQLite):
 | `Confidence` | REAL | NOT NULL, 0–1 |
 | `TimestampUtc` | TEXT | NOT NULL; converter re-applies `DateTimeKind.Utc` on read |
 | `Strategy` | TEXT | NOT NULL, label strategy name (A/B/C), for audit |
+| `DecidedBy` | TEXT | NOT NULL, `MODEL`/`RULE`/`LOW_CONFIDENCE`, for audit |
 | `ScoresJson` | TEXT | NOT NULL, raw `[{label, score}]` from HF, for audit; not in API responses |
 
 History orders by `Id` desc, so there's no date sorting in SQLite. The summary is a single `GROUP BY Result`. `Database.Migrate()` runs at startup.
@@ -115,10 +119,10 @@ History orders by `Id` desc, so there's no date sorting in SQLite. The summary i
 ## 7. Assumptions and questions
 
 Assumptions:
-- **A1** UNCLEAR is a model outcome (section 3). Nothing special-cases the brief's texts, such as "No guidelines exist".
+- **A1** ~~Nothing special-cases "No guidelines exist".~~ Revised 2026-10-03: an explicit, visible `NoGuidelineRule` precondition handles it (`DecidedBy=RULE`); everything else is decided by the model.
 - **A2** Case 3 is hard for NLI, because the action doesn't contradict "weekly". If no strategy gets it, I'll report that rather than force it.
 - **A3** 2000-char limit per field; inputs are trimmed before storage.
-- **A4** `confidence` = score of the winning label. For UNCLEAR via rule 2, 3 or 4, it's the top score. Full precision, not rounded.
+- **A4** `confidence` = score of the winning label. For UNCLEAR via `LOW_CONFIDENCE` it's the top score; via `RULE` it's 1.0. Full precision, not rounded.
 - **A5** No auth on our API, no paging beyond `limit`, no delete endpoint.
 
 Questions (resolved 2026-10-03: "go with your assumptions"):

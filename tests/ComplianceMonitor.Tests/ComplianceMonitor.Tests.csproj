@@ -15,4 +15,8 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The real HF response the parser is coded against. -->
+    <None Include="../../docs/hf-sample-response.json" Link="TestData/hf-sample-response.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

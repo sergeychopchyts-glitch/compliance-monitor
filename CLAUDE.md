@@ -54,7 +54,8 @@ use plain xUnit asserts. No MediatR, no AutoMapper, no repository-of-repositorie
 - Run client: dotnet run --project src/ComplianceMonitor.Client -- <command>
 
 ## Acceptance cases (from the brief)
-These are the Live tests. Do not special-case them in production code.
+These are the Live tests. Do not special-case them in production code, except the
+agreed `NoGuidelineRule` precondition (docs/plan.md, section 3).
 
 | # | Action | Guideline | Expected |
 |---|--------|-----------|----------|
