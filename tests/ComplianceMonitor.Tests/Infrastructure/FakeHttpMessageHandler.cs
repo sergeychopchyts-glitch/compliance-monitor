@@ -4,9 +4,15 @@ using System.Text;
 namespace ComplianceMonitor.Tests.Infrastructure;
 
 /// <summary>Records every request (with its body read at send time) and answers with a scripted response.</summary>
-public sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+public sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond)
+    : HttpMessageHandler
 {
-    private readonly Func<HttpRequestMessage, HttpResponseMessage> _respond = respond;
+    private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _respond = respond;
+
+    public FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond)
+        : this((request, _) => Task.FromResult(respond(request)))
+    {
+    }
 
     public List<RecordedRequest> Requests { get; } = [];
 
@@ -23,7 +29,7 @@ public sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponse
     {
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         Requests.Add(new RecordedRequest(request.Method, request.RequestUri, request.Headers.Authorization, request.Content?.Headers.ContentType?.MediaType, body));
-        return _respond(request);
+        return await _respond(request, cancellationToken);
     }
 }
 

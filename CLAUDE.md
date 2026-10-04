@@ -49,7 +49,10 @@ use plain xUnit asserts. No MediatR, no AutoMapper, no repository-of-repositorie
 ## Commands
 - Build: dotnet build
 - Unit + integration tests: dotnet test
-- Live tests: dotnet test --filter "Category=Live"
+- Live tests (real HF; skipped without a token):
+  dotnet test -- --filter-trait "Category=Live" --explicit on
+  Live tests are [Theory(Explicit = true)], so plain `dotnet test` never runs them, even with a token set.
+  The VSTest-style `dotnet test --filter "Category=Live"` selects them but runs nothing (explicit); don't use it.
 - Run API: dotnet run --project src/ComplianceMonitor.Api
 - Run client: dotnet run --project src/ComplianceMonitor.Client -- <command>
 - Measure label strategies (live HF, cached in .cache/hf/, writes docs/label-tuning.md):

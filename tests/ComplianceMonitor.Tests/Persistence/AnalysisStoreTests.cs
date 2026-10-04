@@ -15,11 +15,15 @@ public sealed class AnalysisStoreTests : IDisposable
 
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly DbContextOptions<ComplianceDbContext> _options;
+    private readonly List<string> _sql = [];
 
     public AnalysisStoreTests()
     {
         _connection.Open();
-        _options = new DbContextOptionsBuilder<ComplianceDbContext>().UseSqlite(_connection).Options;
+        _options = new DbContextOptionsBuilder<ComplianceDbContext>()
+            .UseSqlite(_connection)
+            .LogTo(_sql.Add, [DbLoggerCategory.Database.Command.Name], Microsoft.Extensions.Logging.LogLevel.Information)
+            .Options;
         using var db = NewContext();
         db.Database.Migrate();
     }
@@ -177,6 +181,27 @@ public sealed class AnalysisStoreTests : IDisposable
         Assert.Equal(
             new Dictionary<ComplianceResult, int> { [ComplianceResult.Complies] = 0, [ComplianceResult.Deviates] = 0, [ComplianceResult.Unclear] = 0 },
             summary.ByResult);
+    }
+
+    [Fact]
+    public void Migrations_MatchTheModel()
+    {
+        using var db = NewContext();
+
+        Assert.False(db.Database.HasPendingModelChanges(), "The model changed without a migration: run dotnet ef migrations add.");
+        Assert.Empty(db.Database.GetPendingMigrations());
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_RunsOneGroupByQueryInSql()
+    {
+        await Seed(Record(T0, ComplianceResult.Deviates), Record(T0, ComplianceResult.Complies));
+        _sql.Clear();
+
+        await WithStore(store => store.GetSummaryAsync(Ct));
+
+        var command = Assert.Single(_sql);
+        Assert.Contains("GROUP BY", command, StringComparison.Ordinal);
     }
 
     [Fact]

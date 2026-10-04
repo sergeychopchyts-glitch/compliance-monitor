@@ -52,4 +52,15 @@ public sealed class OpenApiTests
 
         Assert.Equal(["/analyze", "/health", "/history", "/summary"], paths.Select(p => p.Key).Order());
     }
+
+    [Theory]
+    [InlineData("/analyze", "post")]
+    [InlineData("/history", "get")]
+    [InlineData("/summary", "get")]
+    public async Task Document_GroupsAnalysisEndpointsUnderOneTag(string path, string method)
+    {
+        var operation = (await GetDocument())["paths"]![path]![method]!;
+
+        Assert.Equal(["Analysis"], operation["tags"]!.AsArray().Select(t => (string?)t));
+    }
 }

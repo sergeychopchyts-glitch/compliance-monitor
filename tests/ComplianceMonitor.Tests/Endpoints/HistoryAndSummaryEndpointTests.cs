@@ -153,14 +153,19 @@ public sealed class HistoryAndSummaryEndpointTests
     [Theory]
     [InlineData("/history?limit=abc")]
     [InlineData("/history?offset=1.5")]
-    public async Task History_UnparsableNumber_Returns400Problem(string path)
+    public async Task History_UnparsableNumber_Returns400ProblemDetails(string path)
     {
+        // Binding failures come from the framework, which does not name the parameter outside Development.
+        // Out-of-range numbers are ours and do name it (History_InvalidQuery_Returns400NamingTheField).
         using var factory = new ApiFactory();
 
-        using var response = await factory.CreateClient().GetAsync(new Uri(path, UriKind.Relative), Ct);
+        var (status, body, mediaType) = await Get(factory, path);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("application/problem+json", mediaType);
+        Assert.Equal(400, (int?)body["status"]);
+        Assert.False(string.IsNullOrEmpty((string?)body["title"]));
+        Assert.False(string.IsNullOrEmpty((string?)body["type"]));
     }
 
     [Fact]

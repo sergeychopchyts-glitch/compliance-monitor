@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json.Nodes;
 using ComplianceMonitor.Api.Classification;
 using ComplianceMonitor.Tests.Infrastructure;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ComplianceMonitor.Tests.Classification;
@@ -13,11 +14,37 @@ public sealed class ComplianceClassifierTests
     private const string Action = "Closed ticket #48219 and sent confirmation email";
     private const string Guideline = "All closed tickets must include a confirmation email";
 
-    private static ComplianceClassifier CreateClassifier(HttpMessageHandler handler, double confidenceFloor = 0.5)
+    private static ComplianceClassifier CreateClassifier(
+        HttpMessageHandler handler, double confidenceFloor = 0.5, ILabelStrategy? strategy = null, ILoggerProvider? logs = null)
     {
         var options = Options.Create(new HuggingFaceOptions { ApiToken = "token", ConfidenceFloor = confidenceFloor });
+        ILogger<ComplianceClassifier> logger = logs is null
+            ? Microsoft.Extensions.Logging.Abstractions.NullLogger<ComplianceClassifier>.Instance
+            : new Logger<ComplianceClassifier>(LoggerFactory.Create(builder => builder.AddProvider(logs)));
         return new ComplianceClassifier(
-            TestClients.HuggingFace(handler, options.Value), new PlaceholderLabelStrategy(), options);
+            TestClients.HuggingFace(handler, options.Value),
+            strategy ?? new PlaceholderLabelStrategy(),
+            options,
+            logger);
+    }
+
+    /// <summary>A strategy with an "unrelated" label that the model itself can pick (plan §3, UNCLEAR by MODEL).</summary>
+    private sealed class ThreeLabelStrategy : ILabelStrategy
+    {
+        public const string Unrelated = "is unrelated to the guideline";
+
+        public string Name => "three-label";
+
+        public LabelPrompt Build(string action, string guideline) => new(
+            $"Action: {action}. Guideline: {guideline}",
+            "This action {}.",
+            MultiLabel: false,
+            new OrderedDictionary<string, ComplianceResult>(StringComparer.Ordinal)
+            {
+                [Complies] = ComplianceResult.Complies,
+                [Deviates] = ComplianceResult.Deviates,
+                [Unrelated] = ComplianceResult.Unclear,
+            });
     }
 
     private static FakeHttpMessageHandler Responding(params (string Label, double Score)[] scores) =>
@@ -124,6 +151,37 @@ public sealed class ComplianceClassifierTests
             () => Classify(Responding((Complies, 1.0))));
 
         Assert.True(ex.IsMalformedResponse);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_UnrelatedLabelWins_ReturnsUnclearDecidedByModel()
+    {
+        var handler = Responding((Complies, 0.1), (ThreeLabelStrategy.Unrelated, 0.8), (Deviates, 0.1));
+
+        var outcome = await CreateClassifier(handler, strategy: new ThreeLabelStrategy())
+            .ClassifyAsync(Action, Guideline, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ComplianceResult.Unclear, outcome.Result);
+        Assert.Equal(DecisionSource.Model, outcome.DecidedBy);
+        Assert.Equal(0.8, outcome.Confidence);
+        Assert.Equal("three-label", outcome.Strategy);
+    }
+
+    [Theory]
+    [InlineData(Guideline, DecisionSource.Model)]
+    [InlineData("No guidelines exist for this case.", DecisionSource.Rule)]
+    public async Task ClassifyAsync_LogsStrategyResultAndSourceButNotUserText(string guideline, DecisionSource decidedBy)
+    {
+        using var logs = new CapturingLoggerProvider();
+
+        await CreateClassifier(Responding((Complies, 0.9), (Deviates, 0.1)), logs: logs)
+            .ClassifyAsync(Action, guideline, TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(logs.Entries);
+        Assert.Equal("placeholder", entry.State["Strategy"]);
+        Assert.Equal(decidedBy, entry.State["DecidedBy"]);
+        Assert.DoesNotContain(Action, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(guideline, entry.Message, StringComparison.Ordinal);
     }
 
     [Fact]

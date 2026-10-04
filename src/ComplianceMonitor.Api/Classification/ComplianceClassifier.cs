@@ -18,20 +18,23 @@ public sealed record ClassificationOutcome(
     string Strategy,
     IReadOnlyList<LabelScore> Scores);
 
-public sealed class ComplianceClassifier(
+public sealed partial class ComplianceClassifier(
     HuggingFaceZeroShotClient client,
     ILabelStrategy strategy,
-    IOptions<HuggingFaceOptions> options) : IComplianceClassifier
+    IOptions<HuggingFaceOptions> options,
+    ILogger<ComplianceClassifier> logger) : IComplianceClassifier
 {
     private readonly HuggingFaceZeroShotClient _client = client;
     private readonly ILabelStrategy _strategy = strategy;
     private readonly double _confidenceFloor = options.Value.ConfidenceFloor;
+    private readonly ILogger<ComplianceClassifier> _logger = logger;
 
     public async Task<ClassificationOutcome> ClassifyAsync(
         string action, string guideline, CancellationToken cancellationToken)
     {
         if (NoGuidelineRule.Matches(guideline))
         {
+            LogClassified(_logger, _strategy.Name, ComplianceResult.Unclear, DecisionSource.Rule, 1.0);
             return new ClassificationOutcome(
                 ComplianceResult.Unclear, 1.0, DecisionSource.Rule, _strategy.Name, []);
         }
@@ -40,8 +43,15 @@ public sealed class ComplianceClassifier(
         var scores = await _client.ClassifyAsync(prompt.ToRequest(), cancellationToken);
         var mapped = LabelScoreMapper.Map(scores, prompt.Labels, _confidenceFloor);
 
+        LogClassified(_logger, _strategy.Name, mapped.Result, mapped.DecidedBy, mapped.Confidence);
         return new ClassificationOutcome(mapped.Result, mapped.Confidence, mapped.DecidedBy, _strategy.Name, scores);
     }
+
+    // No action or guideline text: they are user input and may contain anything.
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Classified with strategy {Strategy}: {Result} decided by {DecidedBy}, confidence {Confidence}")]
+    private static partial void LogClassified(
+        ILogger logger, string strategy, ComplianceResult result, DecisionSource decidedBy, double confidence);
 }
 
 public sealed record MappedScore(ComplianceResult Result, double Confidence, DecisionSource DecidedBy);

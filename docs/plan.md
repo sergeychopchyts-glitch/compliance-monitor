@@ -26,7 +26,7 @@ Shared settings in `Directory.Build.props`, versions in `Directory.Packages.prop
 5. Insert `AnalysisRecord`, `SaveChangesAsync`. Only reached on success, so failures store nothing.
 6. Return 200 with the response body. (**A** 200 not 201: there is no GET-by-id to point a Location at.)
 
-Logs: HF status code, latency, strategy name. Never the token, never the raw HF body.
+Logs: one line per HF call (outcome, status, attempts, latency) and one per classification (strategy, result, decided by, confidence). Never the token, the Authorization header, the raw HF body, or the action/guideline text.
 
 ## 3. From zero-shot output to a result
 
@@ -42,7 +42,7 @@ Three strategies, measured against the four cases in Step 3:
 - **B. Action as premise, guideline in the hypothesis.** This is the textbook NLI framing. `inputs` = action only. The labels embed the guideline: `"fully satisfies the requirement: {guideline}"`, `"fails the requirement: {guideline}"`, `"has nothing to do with the requirement: {guideline}"`. The template is `"This action {}."`. The labels contain user text, so the strategy keeps its own label→result table per request. "Fully" is there to push partial matches (Case 3) towards DEVIATES.
 - **C. Two labels, independent scores, abstain band.** Use the same premise as A, but only the comply/violate labels, with `multi_label=true`. The result is COMPLIES if the comply score is ≥ T_high and the violate score is < T_low, and DEVIATES the other way round. Anything else is UNCLEAR, which covers both labels low and both labels high. UNCLEAR comes from the scores themselves, not from a third label.
 
-The strategy is chosen by config (`HuggingFace:Strategy`), and labels and thresholds live in config too. Step 3 runs every strategy against the four cases and records the scores in `docs/label-experiments.md`. The strategy that passes the most cases with the widest margin wins. Ties are broken by fewest moving parts.
+The strategy is chosen by config (`HuggingFace:Strategy`), and labels and thresholds live in config too. `tools/LabelLab` runs every strategy against the cases in `tools/LabelLab/cases.json` and writes `docs/label-tuning.md`. The strategy that passes the most cases with the widest margin wins. Ties are broken by fewest moving parts.
 
 **Every way UNCLEAR can arise** (never because something failed; `DecidedBy` says which)
 1. `RULE`: the guideline states that no guideline exists (decided 2026-10-03; supersedes the original A1).
@@ -120,7 +120,7 @@ All access goes through `AnalysisStore` (no generic repository): `AddAsync`, `Ge
   - JSON shape: uppercase result strings, a trailing `Z`, and all three summary keys.
   - History order and limit.
   - Client against an in-process API, including "API down".
-- **Live** (`[Trait("Category","Live")]`, skipped without a token): the four brief cases through the real classifier. Plain `dotnet test` makes no network calls.
+- **Live** (`[Trait("Category","Live")]`, `Explicit = true`, skipped without a token): the four brief cases through the real classifier. Plain `dotnet test` never runs them, so it makes no network calls even where a token is configured; non-Live API tests also run behind a handler that fails on any network access. Run with `dotnet test -- --filter-trait "Category=Live" --explicit on`.
 
 ## 7. Assumptions and questions
 
@@ -129,7 +129,7 @@ Assumptions:
 - **A2** Case 3 is hard for NLI, because the action doesn't contradict "weekly". If no strategy gets it, I'll report that rather than force it.
 - **A3** 2000-char limit per field; inputs are trimmed before storage.
 - **A4** `confidence` = score of the winning label. For UNCLEAR via `LOW_CONFIDENCE` it's the top score; via `RULE` it's 1.0. Stored at full precision; rounded to 2 decimals in responses.
-- **A5** No auth on our API, no paging beyond `limit`, no delete endpoint.
+- **A5** No auth on our API, no delete endpoint. Paging is `limit` + `offset` (revised 2026-10-03).
 
 Questions (resolved 2026-10-03: "go with your assumptions"):
 - **Q1** HF 429 → **503** to the caller; it is our quota, not theirs.

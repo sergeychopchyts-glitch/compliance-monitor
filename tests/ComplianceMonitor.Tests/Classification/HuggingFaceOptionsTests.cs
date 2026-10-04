@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ComplianceMonitor.Api.Classification;
 using ComplianceMonitor.Tests.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -91,22 +90,8 @@ public sealed class HuggingFaceOptionsTests
         });
     }
 
-    [Theory]
-    [InlineData(ComplianceResult.Complies, "\"COMPLIES\"")]
-    [InlineData(ComplianceResult.Deviates, "\"DEVIATES\"")]
-    [InlineData(ComplianceResult.Unclear, "\"UNCLEAR\"")]
-    public void ComplianceResult_SerializesAsUppercaseString(ComplianceResult result, string json) =>
-        Assert.Equal(json, JsonSerializer.Serialize(result));
-
-    [Theory]
-    [InlineData(DecisionSource.Model, "\"MODEL\"")]
-    [InlineData(DecisionSource.Rule, "\"RULE\"")]
-    [InlineData(DecisionSource.LowConfidence, "\"LOW_CONFIDENCE\"")]
-    public void DecisionSource_SerializesAsUppercaseString(DecisionSource source, string json) =>
-        Assert.Equal(json, JsonSerializer.Serialize(source));
-
     private sealed class TokenlessApiFactory : ApiFactory
     {
-        protected override string ApiToken => "";
+        protected override string? ApiToken => "";
     }
 }

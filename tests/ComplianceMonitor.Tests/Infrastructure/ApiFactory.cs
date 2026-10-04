@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace ComplianceMonitor.Tests.Infrastructure;
@@ -33,6 +34,10 @@ public class ApiFactory : WebApplicationFactory<Program>
         _keepAlive.Open();
     }
 
+    public string ConnectionString => _connectionString;
+
+    public CapturingLoggerProvider Logs { get; } = new();
+
     public FakeComplianceClassifier Classifier { get; } = new();
 
     /// <summary>2026-10-03T10:15:00.789Z: the fraction checks that stored timestamps are truncated to seconds.</summary>
@@ -40,7 +45,8 @@ public class ApiFactory : WebApplicationFactory<Program>
 
     public FakeHttpMessageHandler? HuggingFaceHandler { get; init; }
 
-    protected virtual string ApiToken => FakeToken;
+    /// <summary>Null leaves the token to the app's own configuration sources (e.g. the environment).</summary>
+    protected virtual string? ApiToken => FakeToken;
 
     public async Task<List<AnalysisRecord>> GetAnalysesAsync()
     {
@@ -61,21 +67,27 @@ public class ApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(new Dictionary<string, string?>
+        var settings = new Dictionary<string, string?>
         {
-            ["HuggingFace:ApiToken"] = ApiToken,
             [$"ConnectionStrings:{ComplianceDbContext.ConnectionStringName}"] = _connectionString,
-        }));
+        };
+        if (ApiToken is not null)
+        {
+            settings["HuggingFace:ApiToken"] = ApiToken;
+        }
+
+        builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(settings));
+        builder.ConfigureLogging(logging => logging.AddProvider(Logs));
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Time);
 
-            if (HuggingFaceHandler is { } handler)
-            {
-                services.AddHttpClient<HuggingFaceZeroShotClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
-            }
-            else
+            // Never the real network: either the test's fake, or a guard that fails loudly.
+            var primary = HuggingFaceHandler ?? (HttpMessageHandler)new NoNetworkHandler();
+            services.AddHttpClient<HuggingFaceZeroShotClient>().ConfigurePrimaryHttpMessageHandler(() => primary);
+
+            if (HuggingFaceHandler is null)
             {
                 services.RemoveAll<IComplianceClassifier>();
                 services.AddSingleton<IComplianceClassifier>(Classifier);
@@ -91,6 +103,15 @@ public class ApiFactory : WebApplicationFactory<Program>
             _keepAlive.Dispose();
         }
     }
+}
+
+/// <summary>Stands in for the real network in non-Live tests; any request is a bug in the test.</summary>
+public sealed class NoNetworkHandler : HttpMessageHandler
+{
+    public const string Message = "A non-Live test tried to reach the network. Use a fake handler or mark the test Live.";
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException(Message);
 }
 
 /// <summary>Returns <see cref="Outcome"/>, or throws <see cref="Throws"/> when set; records every call.</summary>

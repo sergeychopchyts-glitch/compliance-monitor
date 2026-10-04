@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using ComplianceMonitor.Api.Classification;
@@ -8,12 +7,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
+using Polly;
 
 namespace ComplianceMonitor.Tests.Classification;
 
 /// <summary>
 /// The real DI registration (resilience pipeline, attempt counter, logging) over a fake primary handler.
-/// Backoff is overridden to zero so the suite stays fast; Retry-After is still honoured.
+/// Backoff is overridden to zero so the suite stays fast; Retry-After and timeouts run on a fake clock,
+/// which tests advance explicitly, so nothing waits in real time.
 /// </summary>
 public sealed class HuggingFaceResilienceTests : IDisposable
 {
@@ -23,6 +25,7 @@ public sealed class HuggingFaceResilienceTests : IDisposable
     private static readonly ZeroShotRequest Request = new PlaceholderLabelStrategy().Build("action", "guideline").ToRequest();
 
     private readonly CapturingLoggerProvider _logs = new();
+    private readonly FakeTimeProvider _time = new();
     private ServiceProvider? _provider;
 
     public void Dispose() => _provider?.Dispose();
@@ -38,7 +41,7 @@ public sealed class HuggingFaceResilienceTests : IDisposable
 
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace).AddProvider(_logs));
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<TimeProvider>(_time);
         services.AddComplianceClassification(configuration);
         services.AddHttpClient<HuggingFaceZeroShotClient>().ConfigurePrimaryHttpMessageHandler(() => hf);
         services.PostConfigureAll<HttpStandardResilienceOptions>(options => options.Retry.Delay = TimeSpan.Zero);
@@ -55,6 +58,22 @@ public sealed class HuggingFaceResilienceTests : IDisposable
 
     private static Func<HttpResponseMessage> Status(HttpStatusCode status, string body = "") =>
         () => new HttpResponseMessage(status) { Content = new StringContent(body) };
+
+    /// <summary>
+    /// Advances the fake clock in small steps until the call finishes (bounded, so a bug can't hang the suite).
+    /// Async continuations run in real time while the clock keeps moving, so measured gaps can overshoot by a
+    /// few steps: assert the lower bound exactly and keep upper bounds well below the next mechanism.
+    /// </summary>
+    private async Task<T> Advancing<T>(Task<T> call, TimeSpan step)
+    {
+        for (var i = 0; i < 2000 && !call.IsCompleted; i++)
+        {
+            _time.Advance(step);
+            await Task.Delay(1, Ct);
+        }
+
+        return await call.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+    }
 
     private LogEntry CallLog() => Assert.Single(_logs.Entries, e => e.Category == typeof(HuggingFaceZeroShotClient).FullName);
 
@@ -123,24 +142,67 @@ public sealed class HuggingFaceResilienceTests : IDisposable
     }
 
     [Fact]
-    public async Task TooManyRequestsWithRetryAfter_WaitsThenRetries()
+    public async Task TooManyRequestsWithRetryAfter_WaitsThatLongThenRetries()
     {
-        var hf = Sequence(
-            () =>
+        var arrivals = new List<DateTimeOffset>();
+        var hf = new FakeHttpMessageHandler(_ =>
+        {
+            arrivals.Add(_time.GetUtcNow());
+            if (arrivals.Count > 1)
             {
-                var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(1));
-                return response;
-            },
-            Status(HttpStatusCode.OK, Ok));
-        var client = CreateClient(hf);
-        var stopwatch = Stopwatch.StartNew();
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Ok) };
+            }
 
-        await client.ClassifyAsync(Request, Ct);
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(7));
+            return response;
+        });
 
-        Assert.Equal(2, hf.Requests.Count);
-        // Backoff is zero in these tests, so any wait comes from Retry-After.
-        Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(900), $"Retried after only {stopwatch.Elapsed}.");
+        await Advancing(CreateClient(hf).ClassifyAsync(Request, Ct), TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(2, arrivals.Count);
+        // Backoff is zero in these tests, so the gap comes from Retry-After: at least 7 s, and far below
+        // the 30 s total timeout.
+        Assert.InRange(arrivals[1] - arrivals[0], TimeSpan.FromSeconds(7), TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task SlowAttempt_IsCutByAttemptTimeoutAndRetried()
+    {
+        var arrivals = new List<DateTimeOffset>();
+        var hf = new FakeHttpMessageHandler(async (_, ct) =>
+        {
+            arrivals.Add(_time.GetUtcNow());
+            if (arrivals.Count == 1)
+            {
+                await Task.Delay(Timeout.Infinite, ct); // hangs until the attempt timeout cancels it
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Ok) };
+        });
+        var client = CreateClient(hf, new() { ["HuggingFace:AttemptTimeoutSeconds"] = "2", ["HuggingFace:TimeoutSeconds"] = "10" });
+
+        var scores = await Advancing(client.ClassifyAsync(Request, Ct), TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(2, scores.Count);
+        Assert.Equal(2, arrivals.Count);
+        // Cut at the 2 s attempt timeout, not the 10 s total timeout.
+        Assert.InRange(arrivals[1] - arrivals[0], TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
+        Assert.Equal(2, CallLog().State["Attempts"]);
+    }
+
+    [Fact]
+    public async Task CallLog_ReportsLatencyFromTheTimeProvider()
+    {
+        var hf = new FakeHttpMessageHandler(_ =>
+        {
+            _time.Advance(TimeSpan.FromMilliseconds(250));
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Ok) };
+        });
+
+        await CreateClient(hf).ClassifyAsync(Request, Ct);
+
+        Assert.Equal(250L, CallLog().State["ElapsedMs"]);
     }
 
     [Fact]
@@ -205,6 +267,8 @@ public sealed class HuggingFaceResilienceTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(40), pipeline.TotalRequestTimeout.Timeout);
         Assert.Equal(TimeSpan.FromSeconds(12), pipeline.AttemptTimeout.Timeout);
         Assert.Equal(3, pipeline.Retry.MaxRetryAttempts);
+        Assert.Equal(DelayBackoffType.Exponential, pipeline.Retry.BackoffType);
+        Assert.True(pipeline.Retry.UseJitter);
         Assert.True(pipeline.Retry.ShouldRetryAfterHeader);
         Assert.Equal(TimeSpan.FromSeconds(40) + ClassificationServiceCollectionExtensions.HttpClientTimeoutSlack, httpClient.Timeout);
     }

@@ -79,23 +79,28 @@ public sealed class CachingThrottlingHandlerTests : IDisposable
     [Fact]
     public async Task UncachedCalls_AreSpacedByInterval()
     {
-        var inner = FakeHttpMessageHandler.Returning(HttpStatusCode.OK, "[]");
+        // Arrival times are read from the fake clock, which only moves when the test advances it:
+        // a missing throttle shows up as a 0 ms gap, whatever the machine's speed.
+        var arrivals = new List<DateTimeOffset>();
+        var inner = new FakeHttpMessageHandler(_ =>
+        {
+            arrivals.Add(_time.GetUtcNow());
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
+        });
         var (client, _) = Create(inner);
         using var __ = client;
 
         using var first = await Post(client, "one");
         var second = Post(client, "two");
+        for (var i = 0; i < 1000 && !second.IsCompleted; i++)
+        {
+            _time.Advance(TimeSpan.FromMilliseconds(10));
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+        }
 
-        await Task.Delay(50, TestContext.Current.CancellationToken);
-        Assert.False(second.IsCompleted);
-        _time.Advance(Interval - TimeSpan.FromMilliseconds(1));
-        await Task.Delay(50, TestContext.Current.CancellationToken);
-        Assert.False(second.IsCompleted);
-
-        _time.Advance(TimeSpan.FromMilliseconds(1));
         using var response = await second.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-
-        Assert.Equal(2, inner.Requests.Count);
+        Assert.Equal(2, arrivals.Count);
+        Assert.InRange(arrivals[1] - arrivals[0], Interval, 2 * Interval);
     }
 
     [Fact]

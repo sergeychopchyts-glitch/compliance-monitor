@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Api.Errors;
 using ComplianceMonitor.Tests.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ComplianceMonitor.Tests.Endpoints;
 
@@ -33,7 +35,7 @@ public sealed class AnalyzeEndpointTests
     {
         using var factory = new ApiFactory();
 
-        using var response = await Post(factory, new { action = $"  {Action} ", guideline = Guideline });
+        using var response = await Post(factory, new { action = $"  {Action} ", guideline = $"\t{Guideline}  " });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var raw = await response.Content.ReadAsStringAsync(Ct);
@@ -129,13 +131,30 @@ public sealed class AnalyzeEndpointTests
     }
 
     [Fact]
-    public async Task Analyze_FieldsAtMaxLength_AreAccepted()
+    public async Task Analyze_FieldsAtMaxLength_AreAcceptedAndStoredIntact()
     {
         using var factory = new ApiFactory();
+        var action = new string('a', 2000);
+        var guideline = new string('g', 2000);
 
-        using var response = await Post(factory, new { action = new string('a', 2000), guideline = new string('g', 2000) });
+        using var response = await Post(factory, new { action, guideline });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var row = Assert.Single(await factory.GetAnalysesAsync());
+        Assert.Equal(action, row.Action);
+        Assert.Equal(guideline, row.Guideline);
+    }
+
+    [Fact]
+    public async Task Analyze_LengthIsCheckedAfterTrimming()
+    {
+        using var factory = new ApiFactory();
+        var action = new string('a', 2000);
+
+        using var response = await Post(factory, new { action = $"   {action}   ", guideline = "g" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(action, Assert.Single(await factory.GetAnalysesAsync()).Action);
     }
 
     [Theory]
@@ -150,7 +169,11 @@ public sealed class AnalyzeEndpointTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var problem = await ReadJson(response);
+        Assert.Equal(400, (int?)problem["status"]);
+        Assert.False(string.IsNullOrEmpty((string?)problem["title"]));
         Assert.Empty(factory.Classifier.Calls);
+        Assert.Empty(await factory.GetAnalysesAsync());
     }
 
     public static TheoryData<HuggingFaceException, int, string> ClassifierFailures => new()
@@ -182,16 +205,19 @@ public sealed class AnalyzeEndpointTests
         var problem = await ReadJson(response);
         Assert.Equal(expectedStatus, (int?)problem["status"]);
         Assert.Equal($"urn:compliance-monitor:problem:{expectedType}", (string?)problem["type"]);
+        Assert.Equal(HuggingFaceExceptionHandler.Describe(failure).Title, (string?)problem["title"]);
         Assert.Equal(failure.Message, (string?)problem["detail"]);
         Assert.NotNull(problem["traceId"]);
         Assert.Empty(await factory.GetAnalysesAsync());
     }
 
-    [Fact]
-    public async Task Analyze_RateLimitedWithRetryAfter_PassesRetryAfterThrough()
+    [Theory]
+    [InlineData(429)]
+    [InlineData(503)]
+    public async Task Analyze_UpstreamRetryAfter_IsPassedThroughRoundedUp(int upstreamStatus)
     {
         using var factory = new ApiFactory();
-        factory.Classifier.Throws = HuggingFaceTransientException.FromStatus(429, TimeSpan.FromSeconds(19.2));
+        factory.Classifier.Throws = HuggingFaceTransientException.FromStatus(upstreamStatus, TimeSpan.FromSeconds(19.2));
 
         using var response = await Post(factory, new { action = Action, guideline = Guideline });
 
@@ -209,7 +235,10 @@ public sealed class AnalyzeEndpointTests
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        Assert.DoesNotContain("boom", await response.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+        var raw = await response.Content.ReadAsStringAsync(Ct);
+        Assert.DoesNotContain("boom", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(InvalidOperationException), raw, StringComparison.Ordinal);
+        Assert.DoesNotContain(" at ", raw, StringComparison.Ordinal); // no stack frames outside Development
         Assert.Empty(await factory.GetAnalysesAsync());
     }
 }
@@ -253,6 +282,61 @@ public sealed class AnalyzeWiringTests
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.DoesNotContain(ApiFactory.FakeToken, await response.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
         Assert.Empty(await factory.GetAnalysesAsync());
+        Assert.Contains(factory.Logs.Entries, e => e.Category == typeof(HuggingFaceExceptionHandler).FullName);
+        Assert.All(factory.Logs.Entries, e =>
+        {
+            Assert.DoesNotContain(ApiFactory.FakeToken, e.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("Bearer", e.Message, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public async Task Analyze_HfNeverAnswers_Returns504AfterTotalTimeout()
+    {
+        // HF hangs on every attempt; the pipeline's attempt and total timeouts run on the factory's fake clock.
+        var hf = new FakeHttpMessageHandler(async (_, ct) =>
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        });
+        using var factory = new ApiFactory { HuggingFaceHandler = hf };
+        using var client = factory.CreateClient(); // start the host before the clock moves
+
+        // Event-driven, so slow continuations on a cold machine can't let the clock overtake the pipeline.
+        var pending = client.PostAsJsonAsync(new Uri("/analyze", UriKind.Relative), new { action = "a", guideline = "b" }, Ct);
+        await AdvanceUntil(factory, () => hf.Requests.Count == 1, TimeSpan.Zero);
+        factory.Time.Advance(TimeSpan.FromSeconds(10)); // the first attempt's timeout
+        await AdvanceUntil(factory, () => hf.Requests.Count == 2, TimeSpan.FromMilliseconds(250)); // backoff
+        await AdvanceUntil(factory, () => pending.IsCompleted, TimeSpan.FromSeconds(1)); // up to the 30 s total
+
+        using var response = await pending;
+        Assert.Equal(HttpStatusCode.GatewayTimeout, response.StatusCode);
+        Assert.True(hf.Requests.Count > 1, $"Expected the attempt timeout to trigger retries; saw {hf.Requests.Count} attempt(s).");
+        Assert.Empty(await factory.GetAnalysesAsync());
+    }
+
+    private static async Task AdvanceUntil(ApiFactory factory, Func<bool> done, TimeSpan step)
+    {
+        for (var i = 0; i < 500 && !done(); i++)
+        {
+            factory.Time.Advance(step);
+            await Task.Delay(10, Ct);
+        }
+
+        Assert.True(done(), "The pipeline did not reach the expected state.");
+    }
+
+    [Fact]
+    public async Task NonLiveFactory_BlocksTheNetwork()
+    {
+        using var factory = new ApiFactory();
+        using var scope = factory.Services.CreateScope();
+        var client = scope.ServiceProvider.GetRequiredService<HuggingFaceZeroShotClient>();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.ClassifyAsync(new PlaceholderLabelStrategy().Build("a", "b").ToRequest(), Ct));
+
+        Assert.Equal(NoNetworkHandler.Message, ex.Message);
     }
 
     [Fact]
