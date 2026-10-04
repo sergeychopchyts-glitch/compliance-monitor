@@ -2,6 +2,15 @@
 
 Status: agreed (2026-10-03). Assumptions are marked **A**, open questions **Q** (section 7).
 
+> **Current architecture (refactor, 2026-10-04).** Where this plan conflicts with the code, the code and README win. In particular:
+> - Projects: Api → Application ← Infrastructure, plus the Client and tools/LabelLab (README "Architecture").
+> - Decisions: `DecisionSource` (MODEL/RULE) and `DecisionReason` replace `DecidedBy`. `LOW_CONFIDENCE` is now the reason `INSUFFICIENT_MODEL_CONFIDENCE`, and `confidence` is null when a policy decides.
+> - A temporal-evidence policy overrides a model COMPLIES when a required frequency has no evidence in the action (brief Case 3).
+> - One production prompt (`combined-three-label-v1`). The §3 alternatives live only in LabelLab, and `HuggingFace:Strategy` no longer exists.
+> - The threshold is `Compliance:ConfidenceThreshold`. Responses use `decisionSource`/`decisionReason` instead of `decidedBy`.
+> - `/summary` is cached (HybridCache), `/analyze` is rate-limited (429), and `/health` became `/health/live` + `/health/ready`.
+> - The data model gains audit columns: provider, model ID, top result and score, threshold, raw scores. Migrations `DecisionAudit` and `DecisionAuditBackfill` add them.
+
 ## 1. Solution layout
 
 | Project | Responsibility |

@@ -123,3 +123,59 @@ Most of these were caught *by the verification rules above* rather than by readi
 
 **Still open:** Case 3. All three pre-registered strategies were measured, and none returns DEVIATES. Tuning wording until it passes would be fitting the test, not the problem.
 The README's next step is a design change: split the guideline into its requirements and check each one.
+
+## 4. Follow-up: the architecture refactor (2026-10-04)
+
+After submission-ready, I reviewed the code as a senior reviewer would and wrote a refactor spec. The aim wasn't to make it look enterprise-grade, but to make five boundaries obvious: where HTTP ends, where the use case lives, where the model and the database begin, and which decisions are policy.
+
+**What the review found**
+- **One endpoint file did everything:** validation, building EF entities, model-input budgeting and audit serialization.
+- **Leaky layers:** API contracts mapped straight from the EF entity, and the HTTP error handler knew Hugging Face exception types.
+- **Muddled semantics:** `LOW_CONFIDENCE` was a decision *source*, though it's a *reason*. An UNCLEAR result reported the rejected label's score as its "confidence".
+- **Case 3 still failed** with every measured prompt.
+
+**What changed**
+
+| Change | Why |
+|---|---|
+| `Api` → `Application` ← `Infrastructure` (three backend projects, no Domain/Shared projects) | The use case and its policies are testable without HTTP, EF Core or Hugging Face; `ArchitectureTests` enforce the direction |
+| Thin Minimal API feature endpoints with `AddValidation` | HTTP binds, calls the service and maps the result; nothing else |
+| `IComplianceModelGateway` with a provider-neutral `ModelGatewayException` | Changing model provider no longer touches the HTTP error layer |
+| `DecisionSource` (model or rule) separate from `DecisionReason`; confidence is null when a policy decides | No made-up confidence; full model provenance stored |
+| Temporal-evidence policy | NLI detects contradiction, not a missing requirement. Case 3 is a *class* of failure: a frequency the guideline requires but the action never shows. It's handled as that class, not as Case 3's text |
+| One production prompt; the alternatives moved to LabelLab | No runtime strategy switching nobody needs |
+| `HybridCache` for `/summary`, a concurrency limit on `/analyze`, liveness and readiness checks, configurable migrate-on-startup | Production basics, sized to the exercise |
+
+**About the Case 3 decision.** In section 3 I wrote that tuning prompts until Case 3 passed would be fitting the test. That still holds, so the fix is not a prompt change, and its scope was decided before implementation:
+- the policy only overrides a model **COMPLIES**, so unrelated actions aren't forced to DEVIATES;
+- it recognises only explicit frequencies;
+- weekday names count as evidence of "weekly", which keeps the extra "scheduled Monday reboot" case COMPLIES;
+- it has its own tests for false positives.
+
+It could still be argued that the brief case shaped the rule. My answer is that it's a narrow, visible policy with its own reason code, not a hidden special case.
+
+**What the agent got wrong or overcomplicated during the refactor, and how it was caught**
+- **Data loss in the scaffolded migration:** it dropped `ScoresJson`, and renamed `DecidedBy` without converting its values. Caught by reviewing the scaffold.
+  - **Second trap:** SQLite rebuilds the table at the *end* of a migration, so the data `UPDATE`s would have hit NOT NULL columns. Caught by reading the generated SQL.
+  - **Fix:** a separate data-only migration (`DecisionAuditBackfill`), proven by a test that upgrades a database at the old schema, and by migrating my real dev database (16 rows).
+- **The entity rename** would have made EF drop and recreate the table, because the old snapshot named the old type. Caught before generating; the snapshot names were updated first.
+- **Validation key names:** `.NET 10 AddValidation` names errors after C# properties (`"Action"`), while the rest of the contract uses camelCase. Found by probing the real response; fixed with explicit messages and one camel-casing hook.
+- **A behaviour change it flagged rather than hid:** DataAnnotations check the maximum length *before* trimming. The old test for "trim, then check length" was replaced by one that documents the new behaviour.
+- **Its own test bugs, all caught by test runs:**
+  - a policy-test helper whose second label became the top one;
+  - a migration test using an old column name;
+  - comparing a SQLite REAL as text;
+  - LabelLab's JSON parsing, which relied on enum attributes that had moved out of `Application`.
+- **Deliberately removed tests, each explained before removal:**
+  - the old classifier tests, rewritten under `Application/` and `Infrastructure/`;
+  - the enum-attribute serialization tests (JSON naming is now the API's job, and covered by raw-JSON tests);
+  - the runtime strategy-selection tests (runtime selection was removed).
+- **Where it pushed back on my spec:**
+  - It argued the temporal policy should run *after* the model, not before it, so unrelated actions stay UNCLEAR.
+  - It showed that strict word matching would break the "Monday" case.
+  - It surfaced that the three-label prompt measures 7/11 on extra cases against 8/11 for the two-label one, so choosing it is a trade-off.
+  - It flagged that `HybridCache` and `Logging.Abstractions` were outside the package allowlist before adding them.
+
+**Verified at the end:** `dotnet build` with zero warnings, `dotnet test` green, `dotnet format` clean, and the Live tests 4/4 against the real model. The client demo also showed 4/4, with exit code 0.
+
+**Documented rather than built** (README, "Production notes"): authentication behind the organisation's identity provider, `Idempotency-Key`, keyset pagination, OpenTelemetry, cross-instance cache invalidation, the external data-flow approval, and migrations as a deployment step.

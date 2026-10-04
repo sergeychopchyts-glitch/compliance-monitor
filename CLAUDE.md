@@ -30,7 +30,8 @@ Reviewers judge code quality, tests, and how I direct and check your work.
 ## Packages
 Allowed: Microsoft.EntityFrameworkCore.Sqlite, Microsoft.EntityFrameworkCore.Design,
 Microsoft.AspNetCore.OpenApi, Scalar.AspNetCore, Microsoft.Extensions.Http.Resilience,
-Microsoft.AspNetCore.Mvc.Testing, Microsoft.Extensions.TimeProvider.Testing, xunit.v3.
+Microsoft.AspNetCore.Mvc.Testing, Microsoft.Extensions.TimeProvider.Testing, xunit.v3,
+Microsoft.Extensions.Caching.Hybrid (summary cache), Microsoft.Extensions.Logging.Abstractions (Application logging).
 Anything else: ask first. No FluentAssertions (v8 is commercially licensed);
 use plain xUnit asserts. No MediatR, no AutoMapper, no repository-of-repositories.
 
@@ -68,6 +69,15 @@ agreed `NoGuidelineRule` precondition (docs/plan.md, section 3).
 | 2 | Closed ticket #48219 without sending confirmation email | All closed tickets must include a confirmation email | DEVIATES |
 | 3 | Rebooted the server and checked logs | Servers must be rebooted weekly and logs reviewed after restart | DEVIATES |
 | 4 | Skipped torque confirmation at Station 3 | No guidelines exist for this case. | UNCLEAR |
+
+## Architecture (since the 2026-10-04 refactor)
+- src/ComplianceMonitor.Api: HTTP only (thin Minimal API feature endpoints) and the composition root.
+- src/ComplianceMonitor.Application: the use case, policies, models and the abstractions
+  (IAnalysisRepository, IComplianceModelGateway). No ASP.NET Core, EF Core or Hugging Face references.
+- src/ComplianceMonitor.Infrastructure: EF Core persistence and migrations, the Hugging Face gateway, HybridCache.
+- Dependencies: Api -> Application <- Infrastructure (enforced by ArchitectureTests).
+- New migration: dotnet tool restore, then
+  dotnet ef migrations add <Name> --project src/ComplianceMonitor.Infrastructure --output-dir Persistence/Migrations
 
 ## Agreed design
 See docs/plan.md

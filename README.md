@@ -1,210 +1,187 @@
 # Compliance Monitor
 
-A .NET 10 Web API that classifies whether an action **COMPLIES** with, **DEVIATES** from, or is **UNCLEAR** against a guideline, using Hugging Face `facebook/bart-large-mnli` (zero-shot NLI).
-Every successful classification is stored in SQLite and exposed through `/history` and `/summary`. A console client exercises all three endpoints.
+A .NET 10 Web API that classifies whether an action **COMPLIES** with, **DEVIATES** from, or is **UNCLEAR** against a guideline, using Hugging Face `facebook/bart-large-mnli` (zero-shot NLI) plus two explicit application policies.
+Every successful analysis is stored with an audit trail of how it was decided, and exposed through `/history` and `/summary`. A console client exercises all three endpoints.
+
+All four cases from the brief pass against the real model (verified 2026-10-04):
+
+| # | Action → guideline | Result | Decided by |
+|---|---|---|---|
+| 1 | Closed ticket and sent confirmation email → confirmation email required | COMPLIES (0.98) | model |
+| 2 | Closed ticket without sending confirmation email → same | DEVIATES (0.92) | model |
+| 3 | Rebooted the server and checked logs → reboot *weekly*, review logs | DEVIATES | policy: no evidence of the weekly frequency |
+| 4 | Skipped torque confirmation → "No guidelines exist for this case." | UNCLEAR | policy: no applicable guideline |
 
 ## Quick start
 
-**Prerequisites:** .NET SDK 10.0.4xx (pinned in `global.json`) and a Hugging Face account. No database setup: SQLite migrations run on startup.
+**Prerequisites:** .NET SDK 10.0.401 or a later 10.0 feature band (pinned in `global.json`), and a Hugging Face account.
 
 **1. Create a token.** Create a **fine-grained** token with the **"Make calls to Inference Providers"** permission.
-[This link](https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained) opens the form with both already selected (from the [Inference Providers docs](https://huggingface.co/docs/inference-providers/index#authentication)).
+[This link](https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained) opens the form with both selected (from the [Inference Providers docs](https://huggingface.co/docs/inference-providers/index#authentication)).
 
-**2. Store the token** with user-secrets. Never put it in `appsettings*.json`; a test fails if you do.
+**2. Store it** with user-secrets. Never put it in `appsettings*.json`; a test fails if you do.
 
 ```bash
 git clone https://github.com/sergeychopchyts-glitch/compliance-monitor.git && cd compliance-monitor
 dotnet user-secrets set HuggingFace:ApiToken <your-token> --project src/ComplianceMonitor.Api
 ```
 
-Outside Development, set the environment variable `HuggingFace__ApiToken` instead. Without a token the API refuses to start, with a message naming the config key.
+Outside Development, set `HuggingFace__ApiToken` in the environment, or better, the platform's secret manager. Without a token the API refuses to start, with a message naming the key.
 
-**3. Run the API** (http://localhost:5080):
+**3. Run the API** on http://localhost:5080. The SQLite database is created and migrated on first start (`Database:MigrateOnStartup`, on by default for local use).
 
 ```bash
 dotnet run --project src/ComplianceMonitor.Api
 ```
 
-Interactive API docs (Development only): http://localhost:5080/scalar, which redirects to `/scalar/v1`. The raw OpenAPI document is at `/openapi/v1.json`.
-`src/ComplianceMonitor.Api/ComplianceMonitor.Api.http` has every request ready to send from VS Code or Rider.
+API docs in Development: http://localhost:5080/scalar (it redirects to `/scalar/v1`), and the raw document at `/openapi/v1.json`.
+`src/ComplianceMonitor.Api/ComplianceMonitor.Api.http` has every request ready to send.
 
-**4. Run the client demo** in a second terminal. It sends the brief's four cases, then shows history and summary.
+**4. Run the client demo** in a second terminal: the four brief cases, then history and summary.
 
 ```bash
 dotnet run --project src/ComplianceMonitor.Client
 ```
-
 ```
 Brief cases
-  Case 1  expected COMPLIES  actual COMPLIES  (0.88, MODEL)  PASS
-  Case 2  expected DEVIATES  actual DEVIATES  (0.97, MODEL)  PASS
-  Case 3  expected DEVIATES  actual COMPLIES  (0.62, MODEL)  FAIL
-  Case 4  expected UNCLEAR   actual UNCLEAR   (1.00, RULE)  PASS
-3/4 cases passed.
+  Case 1  expected COMPLIES  actual COMPLIES  (0.98, MODEL_CLASSIFICATION)  PASS
+  Case 2  expected DEVIATES  actual DEVIATES  (0.92, MODEL_CLASSIFICATION)  PASS
+  Case 3  expected DEVIATES  actual DEVIATES  (—, MISSING_TEMPORAL_EVIDENCE)  PASS
+  Case 4  expected UNCLEAR   actual UNCLEAR   (—, NO_APPLICABLE_GUIDELINE)  PASS
+4/4 cases passed.
 ```
 
-Case 3 is a known limitation (see below). Other client commands:
-
-```bash
-dotnet run --project src/ComplianceMonitor.Client -- analyze \
-  --action "Wore safety goggles while operating the lathe" \
-  --guideline "Eye protection must be worn when operating machinery"
-```
-```
-Result:      COMPLIES
-Confidence:  0.92
-Decided by:  MODEL
-Timestamp:   2026-10-04T01:27:51Z
-Id:          10
-```
-
-```bash
-dotnet run --project src/ComplianceMonitor.Client -- run-cases              # only the four brief cases (exit 1 while Case 3 fails)
-dotnet run --project src/ComplianceMonitor.Client -- summary
-dotnet run --project src/ComplianceMonitor.Client -- history --limit 500    # the API's 400, shown as a field error (exit 3)
-dotnet run --project src/ComplianceMonitor.Client -- --help                 # all commands, options and exit codes
-```
-
+Other commands: `analyze --action "…" --guideline "…"`, `run-cases`, `history [--limit N] [--result COMPLIES|DEVIATES|UNCLEAR]`, `summary` and `--help`.
 The base URL comes from `--base-url`, else `COMPLIANCE_API_URL`, else `http://localhost:5080`.
-Exit codes: `0` ok · `1` a brief case failed · `2` API unreachable or timed out · `3` API returned an error · `64` bad usage · `130` Ctrl+C.
+Exit codes: `0` ok · `1` a brief case failed · `2` API unreachable or timed out · `3` API returned an error (including 429) · `64` bad usage · `130` Ctrl+C.
 
-## API reference
+## API
 
-All responses are JSON with camelCase properties and enums as uppercase strings. Errors are RFC 7807 `application/problem+json`.
+JSON uses camelCase, with enums as uppercase strings. Errors are RFC 7807 `application/problem+json`.
 
 **`POST /analyze`**: classify and store.
 
 ```bash
 curl -s -X POST localhost:5080/analyze -H 'Content-Type: application/json' \
-  -d '{"action":"Closed ticket #48219 and sent confirmation email","guideline":"All closed tickets must include a confirmation email"}'
+  -d '{"action":"Rebooted the server and checked logs","guideline":"Servers must be rebooted weekly and logs reviewed after restart"}'
 ```
 ```json
-{"id":1,"action":"Closed ticket #48219 and sent confirmation email","guideline":"All closed tickets must include a confirmation email","result":"COMPLIES","confidence":0.88,"decidedBy":"MODEL","timestamp":"2026-10-04T00:40:32Z"}
+{"id":23,"action":"Rebooted the server and checked logs","guideline":"Servers must be rebooted weekly and logs reviewed after restart","result":"DEVIATES","confidence":null,"decisionSource":"RULE","decisionReason":"MISSING_TEMPORAL_EVIDENCE","timestamp":"2026-10-04T05:14:39Z"}
 ```
 
-Both fields are required, trimmed, and at most 2000 characters. Together they must also fit the model's 1024-token input, which in practice means about 950 bytes of text in total.
-Hugging Face silently truncates longer input, which can flip the answer, so the API refuses it up front.
-A bad request gets 400 with a ValidationProblemDetails body that names each bad field.
-`confidence` is rounded to 2 decimals in the response; the database keeps the full score.
+- **Fields returned:**
+  - `confidence` is the model's score for the result, rounded to 2 decimals. It's `null` when a policy decided; there is no meaningful "confidence in UNCLEAR".
+  - `decisionSource` is `MODEL` or `RULE`.
+  - `decisionReason` is `MODEL_CLASSIFICATION`, `NO_APPLICABLE_GUIDELINE`, `MISSING_TEMPORAL_EVIDENCE` or `INSUFFICIENT_MODEL_CONFIDENCE`.
+- **Validation:** both fields are required, not blank, and at most 2000 characters (.NET 10 `AddValidation` with DataAnnotations). Together they must also fit the model's 1024-token input, about 950 bytes of text. Hugging Face silently truncates longer input, which can flip the answer.
 
-**`GET /history`**: newest first. Takes `limit` (1–200, default 50), `offset` (≥ 0) and `result` (optional filter).
+**`GET /history?limit=50&offset=0&result=DEVIATES`**: newest first. `limit` is 1–200 (default 50), `offset` ≥ 0, `result` optional.
 
-```bash
-curl -s "localhost:5080/history?limit=2&result=DEVIATES"
-```
 ```json
-[{"id":2,"action":"Closed ticket #48219 without sending confirmation email","guideline":"All closed tickets must include a confirmation email","result":"DEVIATES","confidence":0.97,"decidedBy":"MODEL","timestamp":"2026-10-04T00:40:33Z"}]
+[{"id":23,"action":"Rebooted the server and checked logs","guideline":"Servers must be rebooted weekly and logs reviewed after restart","result":"DEVIATES","confidence":null,"decisionSource":"RULE","decisionReason":"MISSING_TEMPORAL_EVIDENCE","timestamp":"2026-10-04T05:14:39Z"}]
 ```
 
-**`GET /summary`**: all three keys are always present.
+**`GET /summary`**: all three keys are always present. Cached for 30 s; every new analysis invalidates the cache.
 
-```bash
-curl -s localhost:5080/summary
-```
 ```json
-{"total":4,"byResult":{"COMPLIES":2,"DEVIATES":1,"UNCLEAR":1}}
+{"total":23,"byResult":{"COMPLIES":10,"DEVIATES":8,"UNCLEAR":5}}
 ```
 
-**Failures:** when classification fails, nothing is stored and there is no fallback label.
+**Health:** `GET /health/live` (the process answers) and `GET /health/ready` (database reachable and migrated; never calls the model).
+
+**Failures:** when classification fails, nothing is stored and there's no fallback label.
 
 | Cause | Status |
 |---|---|
-| Invalid input | 400 |
-| HF rejected our token (401/403), other 4xx, unreadable response | 502 |
-| HF 429 / 503 / 5xx / network error, after retries | 503, with `Retry-After` when HF sent one |
-| Our circuit breaker is open, or our rate limit is reached | 503 |
-| HF 402 (credits exhausted) | 503, with its own `type` |
-| HF timeout (10 s per attempt, 30 s total) | 504 |
+| Invalid input, or too long for the model | 400, with field errors |
+| Too many concurrent analyses | 429 |
+| Model rejected our credentials or request, or answered with something unusable | 502 |
+| Model unavailable or rate-limited after retries, or our circuit breaker is open | 503, with `Retry-After` when known |
+| Model credits exhausted | 503, with its own `type` |
+| Model timeout (10 s per attempt, 30 s total) | 504 |
 | Anything else | 500, generic detail, no stack trace |
 
-## How classification works
+## How a decision is made
 
-1. **The no-guideline rule.** If the whole guideline is a statement that no guideline exists (e.g. "No guidelines exist for this case."), there is nothing to judge against. The result is UNCLEAR with `decidedBy: RULE`, and HF is not called.
-   A guideline that merely *mentions* the phrase ("If no guideline exists for a station, escalate…") goes to the model as usual.
-2. **The label strategy** turns (action, guideline) into a zero-shot request: `inputs`, `candidate_labels`, `hypothesis_template` and `multi_label`. It's selected with `HuggingFace:Strategy`, and four are implemented:
-   - `placeholder` (the default): `"Action: …\nGuideline: …"` with *complies with the guideline* / *violates the guideline*, template `"This action {}."`.
-   - `combined-three-label`: the same premise plus an *is unrelated to the guideline* → UNCLEAR label.
-   - `guideline-hypothesis`: the action is the premise, and the guideline is written into each label ("fully satisfies the requirement: …").
-   - `independent-scores`: the two labels scored independently (`multi_label`). The result is UNCLEAR if neither or both reach the floor.
-3. **Mapping.** HF returns labels sorted by score. They are mapped **by label text, never by position**. If any label is unknown, missing or duplicated, the response is treated as a failure, not as UNCLEAR.
-4. **Confidence floor.** If the top score is below `HuggingFace:ConfidenceFloor` (default 0.5), the result is UNCLEAR with `decidedBy: LOW_CONFIDENCE`. Otherwise it's the top label's result with `decidedBy: MODEL`.
+1. **No-applicable-guideline policy.** If the whole guideline states that no guideline exists ("No guidelines exist for this case."), the result is UNCLEAR and the model isn't called. A guideline that merely mentions the phrase ("If no guideline exists for a station, escalate…") goes to the model.
+2. **The model.** One production prompt, `combined-three-label-v1`: premise `"Action: … Guideline: …"`, with candidate labels *complies with* / *violates* / *is unrelated to* the guideline, mapped to COMPLIES / DEVIATES / UNCLEAR **by label text, never by position**.
+3. **Confidence threshold.** A top score below `Compliance:ConfidenceThreshold` (0.5) gives UNCLEAR (`INSUFFICIENT_MODEL_CONFIDENCE`).
+4. **Temporal-evidence policy.** If the model says COMPLIES but the guideline requires an explicit frequency the action shows no evidence of, the result is DEVIATES (`MISSING_TEMPORAL_EVIDENCE`).
+   - **Frequencies recognised:** daily, weekly, monthly, annually, and "every / each / once a" plus a unit.
+   - **Evidence:** the same unit stated in the action; a weekday name also counts for "weekly".
+   - **Narrow on purpose:** it never overrides a model DEVIATES or UNCLEAR, so an unrelated action stays UNCLEAR.
+   - **Why it's needed:** NLI detects contradiction, not a missing requirement. Case 3 doesn't contradict "weekly"; it just never shows it.
+5. **Audit trail.** Every analysis stores the final result, source and reason, plus the model's provider, model ID, prompt name, top result, top score, every raw score and the threshold in force.
 
-`decidedBy` tells a reviewer *why* a result is UNCLEAR. It is stored with the strategy name and the raw HF scores for audit.
+**Choosing the prompt.** `tools/LabelLab` measures prompts against the 4 brief cases and 11 extra ones, all decided through the same policies as the API ([docs/label-tuning.md](docs/label-tuning.md)):
 
-**Choosing a strategy.** The three alternatives were specified in `docs/plan.md` before any measurement. The selection rule was also fixed in advance: most brief cases passed, then most extra cases, then widest margin.
-`tools/LabelLab` ran all four against the brief's 4 cases and 11 extra ones ([docs/label-tuning.md](docs/label-tuning.md)):
+| Prompt | Brief | Extra |
+|---|---|---|
+| **combined-three-label-v1** (production) | 4/4 | 7/11 |
+| placeholder (two labels) | 4/4 | 8/11 |
+| guideline-hypothesis | 3/4 | 6/11 |
+| independent-scores | 4/4 | 7/11 |
 
-| Strategy | Brief | Extra | Case 3 |
-|---|---|---|---|
-| placeholder | 3/4 | **8/11** | COMPLIES 0.62 |
-| combined-three-label | 3/4 | 7/11 | COMPLIES 0.88 |
-| guideline-hypothesis | 3/4 | 6/11 | UNCLEAR (low confidence) |
-| independent-scores | 3/4 | 5/11 | UNCLEAR (both labels ~1.0) |
-
-The placeholder wins on extra cases, so it stays the default. The wording was not tuned after seeing the results.
+The three-label prompt ships because it gives the model an explicit UNCLEAR, as the brief suggests, even though the two-label placeholder scores one extra case higher. Only the production prompt is in the API; the others live in LabelLab.
 
 ## Tests
 
 ```bash
-dotnet test                                                    # unit + integration; no network calls
-dotnet test -- --filter-trait "Category=Live" --explicit on    # the 4 brief cases against real HF
-dotnet run --project tools/LabelLab                            # strategy measurement (cached in .cache/hf/)
+dotnet test                                                    # deterministic; no network calls
+dotnet test -- --filter-trait "Category=Live" --explicit on    # the 4 brief cases against real HF (needs a token)
+dotnet run --project tools/LabelLab                            # prompt measurement, cached in .cache/hf/
 ```
 
-- `tests/ComplianceMonitor.Tests` holds the API, persistence and LabelLab tests. Integration tests use `WebApplicationFactory` with in-memory SQLite (real SQLite, not the EF InMemory provider), a fake classifier or a fake HF handler, and `FakeTimeProvider`. A guard handler fails any test that tries to reach the network.
-- `tests/ComplianceMonitor.Client.Tests` drives the client end to end over a fake API, covering every command, error path and exit code.
-- **Live tests** are `[Theory(Explicit = true)]` with `[Trait("Category","Live")]`. Plain `dotnet test` never runs them, even with a token configured, and they skip when no token is set. Don't use `dotnet test --filter "Category=Live"`: it selects them but runs nothing.
-- **CI** (`.github/workflows/ci.yml`) restores, builds in Release, runs the non-live tests and checks `dotnet format --verify-no-changes`.
+- `tests/ComplianceMonitor.Tests` has one folder per layer:
+  - `Application/`: policies, decisions and the service with fakes.
+  - `Infrastructure/`: the HF client, gateway, resilience, input budget, the repository on real in-memory SQLite (including the upgrade migration), and the cache.
+  - `Api/`: `WebApplicationFactory` with a fake model gateway; also contracts, validation, error mapping, rate limiting, health and OpenAPI.
+  - `Live/`, `LabelLab/`, and architecture tests that enforce the dependency rule.
+- A guard handler fails any non-Live test that tries to reach the network.
+- `tests/ComplianceMonitor.Client.Tests` drives the client end to end over a fake API.
+- **Live tests** are `[Theory(Explicit = true)]`, so plain `dotnet test` never runs them, even with a token configured. Don't use `--filter "Category=Live"`: it selects them but runs nothing.
+- **CI** (`.github/workflows/ci.yml`) restores, builds in Release, runs the non-live tests, checks formatting, and publishes any failing test as a public annotation.
 
-## Design decisions
-
-| Decision | Why | Trade-off |
-|---|---|---|
-| Labels mapped by text; the label set must match exactly | HF sorts by score; position is meaningless | A changed label wording surfaces as a 502, not a silent wrong answer |
-| `NoGuidelineRule` as an explicit precondition | No guideline means nothing to judge; the model alone said DEVIATES (0.945) for Case 4 | A phrase list is a rule, not ML; it's visible as `decidedBy: RULE` |
-| Failures never become UNCLEAR | UNCLEAR is a judgment, not an error; nothing is stored on failure | Callers must handle 502/503/504 |
-| Fail fast without a token (`ValidateOnStart`) | A misconfigured API should not start | `/history` can't be served without a token either |
-| Standard resilience handler: 3 retries, backoff with jitter, `Retry-After` | HF returns 503 while the model loads, and 429 on quota | Retrying the POST is safe: inference is idempotent |
-| SQLite + EF Core migrations, `CreatedAt` as a UTC `DateTime` | Zero setup; EF's SQLite provider can't order `DateTimeOffset` | Single node only |
-| Enums stored by API names (`COMPLIES`, `LOW_CONFIDENCE`) | The table reads like the API | A custom converter instead of `HasConversion<string>()` |
-| Minimal APIs and one `AnalysisStore` class | Three endpoints don't need MediatR or repositories | — |
-| Live tests explicit, plus a no-network guard | `dotnet test` must be free and deterministic everywhere | Live runs need the longer command |
-| Hand-rolled client argument parsing | Five commands; no extra package | No auto-generated help per option |
-
-## Known limitations and next steps
-
-- **Case 3 fails with every strategy.** "Rebooted the server and checked logs" against a *weekly* reboot rule: NLI detects contradiction, not a missing requirement.
-  Two strategies at least stop calling it COMPLIES (they return UNCLEAR), but none returns DEVIATES. Deliberately not tuned further: wording changed until one case passes is overfitting.
-  **Next:** split the guideline into its requirements ("rebooted weekly", "logs reviewed after restart") and require the action to entail each one. That's a design change, to be measured on new cases, not just Case 3.
-- **The "unrelated" label never wins.** With strategy A even "Watered the plants" scores COMPLIES, and without the rule every strategy calls Case 4 DEVIATES. That's why the no-guideline rule exists.
-- **The confidence floor can't fire with the default strategy.** With two labels scored against each other, the top score is always at least 0.5. It does fire with `guideline-hypothesis` and `independent-scores`.
-- **The input budget is conservative.** It counts UTF-8 bytes, which can never under-count tokens, rather than real tokens. Text that would fit may be refused; a real BPE tokenizer would be exact, but needs a package outside the allowlist.
-- **The extra LabelLab cases** were written by the coding agent and need human review before their accuracy numbers mean much.
-- **No auth or rate limiting** on the API, and the history response has no total count.
-- **Unparsable query values** (e.g. `limit=abc`) return a framework 400 that doesn't name the parameter. Out-of-range values do name it.
-- **macOS:** port 5000 belongs to the AirPlay Receiver, which is why the API uses 5080.
-- **Stale migration lock:** if the API is killed mid-migration, EF Core leaves a lock row behind and the next start hangs. Delete the local `src/ComplianceMonitor.Api/compliance.db*` files.
-
-## Project layout
+## Architecture
 
 ```
-src/ComplianceMonitor.Api/          Minimal API host
-  Classification/                   HF client, options, classifier, mapper, NoGuidelineRule, input budget
-    Strategies/                     the four label strategies
-  Endpoints/                        /analyze, /history, /summary (one MapGroup)
-  Errors/                           IExceptionHandler → ProblemDetails
-  Persistence/                      DbContext, AnalysisStore, migrations
-src/ComplianceMonitor.Client/       Console client (demo, analyze, run-cases, history, summary)
-tests/ComplianceMonitor.Tests/      API, persistence, LabelLab and Live tests
-tests/ComplianceMonitor.Client.Tests/
-tools/LabelLab/                     Label-strategy measurement against live HF
-docs/                               Brief, design plan, label-tuning results, recorded HF response
-CLAUDE.md                           Instructions given to the coding agent
+src/ComplianceMonitor.Api/             HTTP only: Features/{Analyze,History,Summary}, Errors, rate limiting, health, composition root
+src/ComplianceMonitor.Application/     The use case: ComplianceAnalysisService, CompliancePolicy and rules, models,
+                                       IAnalysisRepository and IComplianceModelGateway, provider-neutral ModelGatewayException
+src/ComplianceMonitor.Infrastructure/  Persistence/ (EF Core + SQLite, migrations), Integrations/HuggingFace/ (gateway,
+                                       client, resilience, prompt, input budget), Caching/ (HybridCache summary)
+src/ComplianceMonitor.Client/          Console client
+tools/LabelLab/                        Prompt measurement against live HF, including the non-production prompts
 ```
 
-Migrations (only needed when the model changes):
+Dependencies point inwards: **Api → Application ← Infrastructure**. The API references Infrastructure only to register it.
+`Application` references no ASP.NET Core, EF Core or Hugging Face code (`ArchitectureTests` checks this). Switching model provider means a new gateway in Infrastructure; the HTTP error layer only knows `ModelGatewayException`.
 
+**Why Minimal APIs.** Three endpoints don't need controllers. The handlers are thin: they bind, call the service and map the result.
+
+**Caching.** Only `/summary` is cached, with `HybridCache` (in-memory today; adding a Redis L2 later needs no code change). `/analyze` is an audited write and is never cached; history is a cheap indexed page.
+
+**Rate limiting.** `POST /analyze` has a concurrency limit (`RateLimiting:Analyze:PermitLimit` 4, `QueueLimit` 2), because each request holds an external model call open for up to 30 s. The other endpoints aren't limited.
+
+**Migrations.** EF Core migrations live in `Infrastructure/Persistence/Migrations`. To add one:
 ```bash
-dotnet tool restore   # installs dotnet-ef 10.0.12 from dotnet-tools.json
-dotnet ef migrations add <Name> --project src/ComplianceMonitor.Api --output-dir Persistence/Migrations
+dotnet tool restore
+dotnet ef migrations add <Name> --project src/ComplianceMonitor.Infrastructure --output-dir Persistence/Migrations
 ```
+
+## Production notes: deliberately deferred
+
+- **Authentication.** None is built, by design: the brief doesn't require it, and a home-grown identity system would be worse than none.
+  - Deploy behind the organisation's identity layer: OIDC/JWT at an API gateway, or `AddAuthentication().AddJwtBearer(...)` against your identity provider.
+  - Require authorisation on the analysis endpoints, e.g. `app.MapGroup("/api/v1").RequireAuthorization()`.
+- **Data handling.** Action and guideline text is sent to an external model provider. Organisations using real compliance data must approve that data flow and the provider's retention policy. Logs never include that text, the token, or provider response bodies.
+- **Secrets.** Use the platform's secret manager (Key Vault, AWS Secrets Manager, etc.), not environment variables in plain config.
+- **Migrations in production.** Run them as a deployment step with schema-change permissions and set `Database:MigrateOnStartup=false`; `/health/ready` reports pending migrations. If a process is killed mid-migration, EF Core's lock row can make the next start wait. Locally, deleting `src/ComplianceMonitor.Api/compliance.db*` resets it.
+- **Idempotency.** If the response to a successful `/analyze` is lost, a client retry stores a duplicate. Production should accept an `Idempotency-Key` header with a uniqueness guarantee.
+- **History at scale.** `limit`/`offset` slows down at large offsets; switch to keyset (cursor) pagination on `(CreatedAt, Id)`. Indexes cover the current queries: `CreatedAt`, and `(Result, CreatedAt)`.
+- **Observability.** Already in place: structured logs and trace IDs. To add: OpenTelemetry traces and metrics for model latency, failures and retries, result counts, rate-limit rejections, database latency, and cache hits and misses.
+- **Multiple instances.** The summary cache is per instance: another instance can serve a summary up to 30 s old. A shared L2 cache or a pub/sub invalidation would fix it.
+- **Known model limits.** Measured on the extra cases:
+  - Unrelated actions are often still called COMPLIES; the "unrelated" label rarely wins.
+  - Missing requirements other than frequency, such as a missed deadline or a step not mentioned, are not caught. The temporal policy is deliberately not generalised into a rules engine.
+- **macOS:** port 5000 belongs to AirPlay Receiver, which is why the API uses 5080.
