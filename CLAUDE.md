@@ -52,6 +52,8 @@ use plain xUnit asserts. No MediatR, no AutoMapper, no repository-of-repositorie
 - Live tests: dotnet test --filter "Category=Live"
 - Run API: dotnet run --project src/ComplianceMonitor.Api
 - Run client: dotnet run --project src/ComplianceMonitor.Client -- <command>
+- Measure label strategies (live HF, cached in .cache/hf/, writes docs/label-tuning.md):
+  dotnet run --project tools/LabelLab [-- --strategy <name>]
 
 ## Acceptance cases (from the brief)
 These are the Live tests. Do not special-case them in production code, except the
