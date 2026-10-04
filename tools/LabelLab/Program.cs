@@ -1,7 +1,8 @@
 // Measures label strategies against the live Hugging Face API.
 // Usage: dotnet run --project tools/LabelLab [-- --strategy <name>]
-using ComplianceMonitor.Api.Classification;
-using ComplianceMonitor.Api.Classification.Strategies;
+using ComplianceMonitor.Application.Compliance;
+using ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
+using ComplianceMonitor.LabelLab.Strategies;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -39,6 +40,8 @@ internal static class Program
             return 2;
         }
 
+        // Same key and default as the API, so LabelLab predicts exactly what the API would return.
+        var threshold = configuration.GetValue($"{ComplianceSettings.SectionName}:{nameof(ComplianceSettings.ConfidenceThreshold)}", new ComplianceSettings().ConfidenceThreshold);
         var strategyFilter = configuration["strategy"];
         var strategies = LabelStrategies.All
             .Where(s => strategyFilter is null || s.Name.Equals(strategyFilter, StringComparison.OrdinalIgnoreCase))
@@ -88,7 +91,7 @@ internal static class Program
         IReadOnlyList<StrategyReport> reports;
         try
         {
-            var runner = new LabRunner(provider.GetRequiredService<HuggingFaceZeroShotClient>(), options.ConfidenceFloor);
+            var runner = new LabRunner(provider.GetRequiredService<HuggingFaceZeroShotClient>(), options.Model, threshold);
             reports = await runner.RunAsync(strategies, cases, cts.Token);
         }
         catch (CreditsExhaustedException ex)
@@ -102,7 +105,7 @@ internal static class Program
             return 130;
         }
 
-        var markdown = MarkdownReport.Render(reports, options.Model, options.ConfidenceFloor, TimeProvider.System.GetUtcNow());
+        var markdown = MarkdownReport.Render(reports, options.Model, threshold, TimeProvider.System.GetUtcNow());
         Console.WriteLine(markdown);
         await File.WriteAllTextAsync(Path.Combine(root, "docs", "label-tuning.md"), markdown);
         Console.WriteLine($"Wrote docs/label-tuning.md. Cache hits: {cacheHandler.CacheHits}, network calls: {cacheHandler.NetworkCalls}.");

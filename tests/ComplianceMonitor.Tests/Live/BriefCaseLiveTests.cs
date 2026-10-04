@@ -1,13 +1,17 @@
-using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Application.Abstractions;
+using ComplianceMonitor.Application.Compliance;
+using ComplianceMonitor.Application.Compliance.Models;
+using ComplianceMonitor.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ComplianceMonitor.Tests.Live;
 
 /// <summary>
-/// The four cases from docs/exercise.md through the real classifier and the real Hugging Face API.
-/// Explicit: plain `dotnet test` never runs them, even on a machine with a token, so it makes no network
-/// calls. When requested (see CLAUDE.md) they skip unless a token is configured.
+/// The four cases from docs/exercise.md through the real use case: the application's policies, the production
+/// prompt and the real Hugging Face API. Explicit: plain `dotnet test` never runs them, even on a machine with a
+/// token, so it makes no network calls. When requested (see CLAUDE.md) they skip unless a token is configured.
 /// </summary>
 [Trait("Category", "Live")]
 public sealed class BriefCaseLiveTests
@@ -32,21 +36,39 @@ public sealed class BriefCaseLiveTests
             .AddEnvironmentVariables()
             .Build();
         Assert.SkipWhen(
-            string.IsNullOrWhiteSpace(configuration[$"{HuggingFaceOptions.SectionName}:{nameof(HuggingFaceOptions.ApiToken)}"]),
+            string.IsNullOrWhiteSpace(configuration["HuggingFace:ApiToken"]),
             "No HuggingFace:ApiToken configured (user-secrets or HuggingFace__ApiToken).");
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
-        services.AddComplianceClassification(configuration);
+        services.AddInfrastructure(configuration);
         await using var provider = services.BuildServiceProvider();
+        var service = new ComplianceAnalysisService(
+            provider.GetRequiredService<IComplianceModelGateway>(),
+            new DiscardingRepository(),
+            TimeProvider.System,
+            new ComplianceSettings(),
+            NullLogger<ComplianceAnalysisService>.Instance);
 
-        var outcome = await provider.GetRequiredService<IComplianceClassifier>()
-            .ClassifyAsync(action, guideline, TestContext.Current.CancellationToken);
+        var result = await service.AnalyzeAsync(action, guideline, TestContext.Current.CancellationToken);
 
         Assert.True(
-            outcome.Result == expected,
-            $"Case {number}: expected {expected}, got {outcome.Result} " +
-            $"(decided by {outcome.DecidedBy}, confidence {outcome.Confidence:0.000}, strategy {outcome.Strategy}).");
+            result.Result == expected,
+            $"Case {number}: expected {expected}, got {result.Result} " +
+            $"(decided by {result.DecisionSource}/{result.DecisionReason}, confidence {result.Confidence?.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) ?? "none"}).");
+    }
+
+    /// <summary>The live tests check classification only; nothing is stored.</summary>
+    private sealed class DiscardingRepository : IAnalysisRepository
+    {
+        public Task<AnalysisResult> AddAsync(NewAnalysis analysis, CancellationToken cancellationToken) =>
+            Task.FromResult(new AnalysisResult(0, analysis.Action, analysis.Guideline, analysis.Decision.Result,
+                analysis.Decision.Confidence, analysis.Decision.Source, analysis.Decision.Reason, analysis.CreatedAt));
+
+        public Task<IReadOnlyList<AnalysisResult>> GetHistoryAsync(int limit, int offset, ComplianceResult? result, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AnalysisResult>>([]);
+
+        public Task<AnalysisSummary> GetSummaryAsync(CancellationToken cancellationToken) => Task.FromResult(new AnalysisSummary(0, 0, 0, 0));
     }
 }

@@ -1,8 +1,8 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using ComplianceMonitor.Api.Classification;
-using ComplianceMonitor.Api.Persistence;
-using ComplianceMonitor.Tests.Infrastructure;
+using ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
+using ComplianceMonitor.Infrastructure.Persistence;
+using ComplianceMonitor.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -108,6 +108,28 @@ public sealed partial class ConfigurationTests
 
     [GeneratedRegex(@"\bDateTime(Offset)?\.(Now|UtcNow|Today)\b")]
     private static partial Regex SystemClock();
+
+    [Theory]
+    [InlineData("1.5")]
+    [InlineData("-0.1")]
+    [InlineData("NaN")]
+    public void Startup_InvalidConfidenceThreshold_FailsNamingTheKey(string threshold)
+    {
+        using var factory = new ThresholdApiFactory(threshold);
+
+        var ex = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        Assert.Contains("Compliance:ConfidenceThreshold must be between 0 and 1.", ex.ToString(), StringComparison.Ordinal);
+    }
+
+    private sealed class ThresholdApiFactory(string threshold) : ApiFactory
+    {
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.UseSetting("Compliance:ConfidenceThreshold", threshold);
+        }
+    }
 
     /// <summary>Sets no token itself, so the app's own sources (here, the environment) supply it.</summary>
     private sealed class EnvironmentTokenApiFactory : ApiFactory

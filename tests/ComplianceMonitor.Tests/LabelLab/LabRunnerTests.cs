@@ -1,10 +1,10 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using ComplianceMonitor.Api.Classification;
-using ComplianceMonitor.Api.Classification.Strategies;
+using ComplianceMonitor.Application.Compliance.Models;
 using ComplianceMonitor.LabelLab;
-using ComplianceMonitor.Tests.Infrastructure;
+using ComplianceMonitor.LabelLab.Strategies;
+using ComplianceMonitor.Tests.TestSupport;
 using Microsoft.Extensions.Options;
 
 namespace ComplianceMonitor.Tests.LabelLab;
@@ -18,7 +18,7 @@ public sealed class LabRunnerTests
     private static readonly LabCase NoGuidelineCase = new("Skipped torque check", "No guidelines exist for this case.", ComplianceResult.Unclear, Brief: true);
 
     private static LabRunner CreateRunner(HttpMessageHandler handler) =>
-        new(TestClients.HuggingFace(handler), 0.5);
+        new(TestClients.HuggingFace(handler), "facebook/bart-large-mnli", 0.5);
 
     private static HttpResponseMessage Scores(double complies, double deviates) => new(HttpStatusCode.OK)
     {
@@ -40,7 +40,7 @@ public sealed class LabRunnerTests
 
         var result = Assert.Single(Assert.Single(reports).Results);
         Assert.Equal(ComplianceResult.Complies, result.Predicted);
-        Assert.Equal(DecisionSource.Model, result.DecidedBy);
+        Assert.Equal(DecisionReason.ModelClassification, result.Reason);
         Assert.Equal(0.8, result.TopScore);
         Assert.Equal(0.6, result.Margin!.Value, precision: 10);
         Assert.True(result.Passed);
@@ -56,7 +56,7 @@ public sealed class LabRunnerTests
         var result = Assert.Single(Assert.Single(reports).Results);
         Assert.Single(handler.Requests);
         Assert.Equal(ComplianceResult.Unclear, result.Predicted);
-        Assert.Equal(DecisionSource.Rule, result.DecidedBy);
+        Assert.Equal(DecisionReason.NoApplicableGuideline, result.Reason);
         Assert.Equal(ComplianceResult.Complies, result.ModelResult);
         Assert.True(result.Passed);
     }

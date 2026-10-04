@@ -20,7 +20,7 @@ public sealed class FakeApi(Func<HttpRequestMessage, string?, HttpResponseMessag
             var action = JsonDocument.Parse(body!).RootElement.GetProperty("action").GetString()!;
             var result = resultFor?.Invoke(action) ?? "COMPLIES";
             return Json(HttpStatusCode.OK, $$"""
-                {"id":7,"action":{{JsonSerializer.Serialize(action)}},"guideline":"g","result":"{{result}}","confidence":0.88,"decidedBy":"MODEL","timestamp":"2026-10-03T10:15:00Z"}
+                {"id":7,"action":{{JsonSerializer.Serialize(action)}},"guideline":"g","result":"{{result}}","confidence":0.88,"decisionSource":"MODEL","decisionReason":"MODEL_CLASSIFICATION","timestamp":"2026-10-03T10:15:00Z"}
                 """);
         }
 

@@ -71,6 +71,6 @@ dotnet_naming_style.i_prefix.required_prefix = I
 dotnet_naming_style.i_prefix.capitalization = pascal_case
 
 # EF Core migrations are generated code.
-[src/ComplianceMonitor.Api/Persistence/Migrations/*.cs]
+[src/ComplianceMonitor.Infrastructure/Persistence/Migrations/*.cs]
 generated_code = true
 dotnet_analyzer_diagnostic.severity = none

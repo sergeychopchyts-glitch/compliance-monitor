@@ -3,6 +3,7 @@
     <Project Path="src/ComplianceMonitor.Api/ComplianceMonitor.Api.csproj" />
     <Project Path="src/ComplianceMonitor.Application/ComplianceMonitor.Application.csproj" />
     <Project Path="src/ComplianceMonitor.Client/ComplianceMonitor.Client.csproj" />
+    <Project Path="src/ComplianceMonitor.Infrastructure/ComplianceMonitor.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ComplianceMonitor.Client.Tests/ComplianceMonitor.Client.Tests.csproj" />

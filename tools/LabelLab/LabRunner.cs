@@ -1,14 +1,18 @@
-using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Application.Compliance;
+using ComplianceMonitor.Application.Compliance.Models;
+using ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
+using ComplianceMonitor.Infrastructure.Integrations.HuggingFace.Strategies;
 
 namespace ComplianceMonitor.LabelLab;
 
-/// <param name="Predicted">What the API would return: the no-guideline rule first, then the model.</param>
-/// <param name="ModelResult">What the model alone decided, even when the rule fired; null on error.</param>
+/// <param name="Predicted">What the API would return: the application's policies applied to the model's answer.</param>
+/// <param name="Reason">Why: the model's classification, or which policy decided.</param>
+/// <param name="ModelResult">The model's own top result, even when a policy decided; null on error.</param>
 public sealed record CaseResult(
     int Number,
     LabCase Case,
     ComplianceResult? Predicted,
-    DecisionSource? DecidedBy,
+    DecisionReason? Reason,
     ComplianceResult? ModelResult,
     double? TopScore,
     double? Margin,
@@ -23,10 +27,11 @@ public sealed record StrategyReport(string Strategy, IReadOnlyList<CaseResult> R
 public sealed class CreditsExhaustedException(Exception innerException)
     : Exception("Hugging Face returned HTTP 402: inference credits are exhausted. Stopping; cached results are kept.", innerException);
 
-public sealed class LabRunner(HuggingFaceZeroShotClient client, double confidenceFloor)
+public sealed class LabRunner(HuggingFaceZeroShotClient client, string modelId, double confidenceThreshold)
 {
     private readonly HuggingFaceZeroShotClient _client = client;
-    private readonly double _confidenceFloor = confidenceFloor;
+    private readonly string _modelId = modelId;
+    private readonly double _confidenceThreshold = confidenceThreshold;
 
     public async Task<IReadOnlyList<StrategyReport>> RunAsync(
         IEnumerable<ILabelStrategy> strategies, IReadOnlyList<LabCase> cases, CancellationToken cancellationToken)
@@ -56,17 +61,19 @@ public sealed class LabRunner(HuggingFaceZeroShotClient client, double confidenc
         try
         {
             var scores = await _client.ClassifyAsync(prompt.ToRequest(), cancellationToken);
-            var model = LabelScoreMapper.Map(scores, prompt, _confidenceFloor);
+            var evaluation = ZeroShotScoreMapper.ToEvaluation(scores, prompt, _modelId, strategy.Name);
             var ranked = scores.Select(s => s.Score).OrderDescending().ToArray();
             var margin = ranked.Length > 1 ? ranked[0] - ranked[1] : ranked[0];
 
-            var ruleFired = NoGuidelineRule.Matches(labCase.Guideline);
+            // The model is always asked, so its own answer is reported even when a policy decides.
+            var decision = CompliancePolicy.DecideWithoutModel(labCase.Guideline)
+                ?? CompliancePolicy.Decide(labCase.Action, labCase.Guideline, evaluation, _confidenceThreshold);
             return new CaseResult(
                 number,
                 labCase,
-                Predicted: ruleFired ? ComplianceResult.Unclear : model.Result,
-                DecidedBy: ruleFired ? DecisionSource.Rule : model.DecidedBy,
-                ModelResult: model.Result,
+                Predicted: decision.Result,
+                Reason: decision.Reason,
+                ModelResult: evaluation.Top.Result,
                 TopScore: ranked[0],
                 Margin: margin,
                 Error: null);

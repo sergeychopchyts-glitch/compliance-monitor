@@ -1,12 +1,16 @@
 using System.Text.Json;
-using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Application.Compliance.Models;
 
 namespace ComplianceMonitor.LabelLab;
 
 /// <param name="Brief">True for the four cases from docs/exercise.md; accuracy is reported separately for them.</param>
 public sealed record LabCase(string Action, string Guideline, ComplianceResult Expected, bool Brief = false)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    // "expected": "COMPLIES" — the Application enums carry no JSON attributes, so the naming is set here.
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper) },
+    };
 
     public static IReadOnlyList<LabCase> Parse(string json)
     {

@@ -8,6 +8,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/ComplianceMonitor.Api/ComplianceMonitor.Api.csproj" />
+    <ProjectReference Include="../../src/ComplianceMonitor.Application/ComplianceMonitor.Application.csproj" />
+    <ProjectReference Include="../../src/ComplianceMonitor.Infrastructure/ComplianceMonitor.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

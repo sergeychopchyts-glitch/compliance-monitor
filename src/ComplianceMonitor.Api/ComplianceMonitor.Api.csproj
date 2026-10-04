@@ -5,11 +5,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Scalar.AspNetCore" />
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The composition root: references Infrastructure only to register its implementations. -->
+    <ProjectReference Include="../ComplianceMonitor.Application/ComplianceMonitor.Application.csproj" />
+    <ProjectReference Include="../ComplianceMonitor.Infrastructure/ComplianceMonitor.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

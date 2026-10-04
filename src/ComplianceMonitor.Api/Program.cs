@@ -1,26 +1,42 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ComplianceMonitor.Api.Classification;
-using ComplianceMonitor.Api.Endpoints;
 using ComplianceMonitor.Api.Errors;
-using ComplianceMonitor.Api.Persistence;
+using ComplianceMonitor.Api.Features.Analyze;
+using ComplianceMonitor.Api.Features.History;
+using ComplianceMonitor.Api.Features.Summary;
+using ComplianceMonitor.Application.Compliance;
+using ComplianceMonitor.Infrastructure;
+using ComplianceMonitor.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-// camelCase properties (web default); enums as strings. ComplianceResult and DecisionSource also carry
-// [JsonStringEnumMemberName] so they serialize the same way outside HTTP (database, logs, tests).
+builder.Services.AddValidation();
+// camelCase properties (web default); enums as uppercase strings: Complies -> "COMPLIES", MissingTemporalEvidence -> "MISSING_TEMPORAL_EVIDENCE".
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper)));
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<HuggingFaceExceptionHandler>();
+// Built-in validation names errors after C# properties ("Action"); the contract is camelCase everywhere ("action").
+builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
+{
+    if (context.ProblemDetails is HttpValidationProblemDetails validation)
+    {
+        validation.Errors = validation.Errors.ToDictionary(e => JsonNamingPolicy.CamelCase.ConvertName(e.Key), e => e.Value);
+    }
+});
+builder.Services.AddExceptionHandler<ModelGatewayExceptionHandler>();
+
+// Composition root: Application use case + Infrastructure implementations.
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddComplianceClassification(builder.Configuration);
-builder.Services.AddDbContext<ComplianceDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString(ComplianceDbContext.ConnectionStringName)));
-builder.Services.AddScoped<AnalysisStore>();
+builder.Services.AddOptions<ComplianceSettings>()
+    .Bind(builder.Configuration.GetSection(ComplianceSettings.SectionName))
+    .Validate(s => s.ConfidenceThreshold is >= 0 and <= 1, "Compliance:ConfidenceThreshold must be between 0 and 1.")
+    .ValidateOnStart();
+builder.Services.AddSingleton(provider => provider.GetRequiredService<IOptions<ComplianceSettings>>().Value);
+builder.Services.AddScoped<IComplianceAnalysisService, ComplianceAnalysisService>();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
@@ -40,6 +56,11 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => TypedResults.Ok(new { status = "ok" }))
     .WithName("Health");
-app.MapAnalysisEndpoints();
+
+app.MapGroup("")
+    .WithTags("Analysis")
+    .MapAnalyze()
+    .MapHistory()
+    .MapSummary();
 
 app.Run();

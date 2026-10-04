@@ -152,7 +152,7 @@ public sealed class ClientAppTests
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse("""{"action":"Closed ticket","guideline":"Send an email"}"""), JsonNode.Parse(request.Body!)));
         Assert.Contains("Result:      COMPLIES", run.Output, StringComparison.Ordinal);
         Assert.Contains("Confidence:  0.88", run.Output, StringComparison.Ordinal);
-        Assert.Contains("Decided by:  MODEL", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Decided by:  MODEL (MODEL_CLASSIFICATION)", run.Output, StringComparison.Ordinal);
         Assert.Contains("Timestamp:   2026-10-03T10:15:00Z", run.Output, StringComparison.Ordinal);
         Assert.Empty(run.Error);
     }
@@ -180,7 +180,7 @@ public sealed class ClientAppTests
         var run = await RunClient(api, ["run-cases"]);
 
         Assert.Equal(1, run.ExitCode);
-        Assert.Contains("Case 3  expected DEVIATES  actual COMPLIES  (0.88, MODEL)  FAIL", run.Output, StringComparison.Ordinal);
+        Assert.Contains("Case 3  expected DEVIATES  actual COMPLIES  (0.88, MODEL_CLASSIFICATION)  FAIL", run.Output, StringComparison.Ordinal);
         Assert.Contains("3/4 cases passed.", run.Output, StringComparison.Ordinal);
     }
 
@@ -188,7 +188,8 @@ public sealed class ClientAppTests
     public async Task History_SendsLimitAndResultAndPrintsRows()
     {
         var api = FakeApi.Healthy(history: """
-            [{"id":9,"action":"Closed ticket","guideline":"Send an email","result":"DEVIATES","confidence":0.97,"decidedBy":"MODEL","timestamp":"2026-10-03T10:16:00Z"}]
+            [{"id":9,"action":"Closed ticket","guideline":"Send an email","result":"DEVIATES","confidence":0.97,"decisionSource":"MODEL","decisionReason":"MODEL_CLASSIFICATION","timestamp":"2026-10-03T10:16:00Z"},
+             {"id":8,"action":"Rebooted","guideline":"Weekly","result":"DEVIATES","confidence":null,"decisionSource":"RULE","decisionReason":"MISSING_TEMPORAL_EVIDENCE","timestamp":"2026-10-03T10:15:00Z"}]
             """);
 
         var run = await RunClient(api, ["history", "--limit", "5", "--result", "deviates"]);
@@ -196,6 +197,7 @@ public sealed class ClientAppTests
         Assert.Equal(0, run.ExitCode);
         Assert.Equal("/history?limit=5&result=DEVIATES", Assert.Single(api.Requests).Uri.PathAndQuery);
         Assert.Contains("#9    2026-10-03T10:16:00Z  DEVIATES 0.97  Closed ticket  |  Send an email", run.Output, StringComparison.Ordinal);
+        Assert.Contains("#8    2026-10-03T10:15:00Z  DEVIATES —     Rebooted  |  Weekly", run.Output, StringComparison.Ordinal);
     }
 
     [Fact]

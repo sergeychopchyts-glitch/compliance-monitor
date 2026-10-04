@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using ComplianceMonitor.LabelLab;
-using ComplianceMonitor.Tests.Infrastructure;
+using ComplianceMonitor.Tests.TestSupport;
 using Microsoft.Extensions.Time.Testing;
 
 namespace ComplianceMonitor.Tests.LabelLab;

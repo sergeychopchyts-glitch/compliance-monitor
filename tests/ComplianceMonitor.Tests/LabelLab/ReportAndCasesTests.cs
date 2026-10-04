@@ -1,5 +1,5 @@
 using System.Text.Json;
-using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Application.Compliance.Models;
 using ComplianceMonitor.LabelLab;
 
 namespace ComplianceMonitor.Tests.LabelLab;
@@ -7,7 +7,7 @@ namespace ComplianceMonitor.Tests.LabelLab;
 public sealed class ReportAndCasesTests
 {
     private static CaseResult Result(int number, bool brief, ComplianceResult expected, ComplianceResult? predicted, string action = "Did a thing") =>
-        new(number, new LabCase(action, "Rule", expected, brief), predicted, DecisionSource.Model, predicted, 0.75, 0.5, null);
+        new(number, new LabCase(action, "Rule", expected, brief), predicted, DecisionReason.ModelClassification, predicted, 0.75, 0.5, null);
 
     [Fact]
     public void Parse_ReadsCasesWithBriefDefaultingToFalse()

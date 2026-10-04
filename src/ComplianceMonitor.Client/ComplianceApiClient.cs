@@ -4,8 +4,9 @@ using System.Text.Json;
 namespace ComplianceMonitor.Client;
 
 // The client's own view of the API contract (docs/plan.md, section 4); it does not reference the API project.
+/// <param name="Confidence">Null when a policy decided rather than the model.</param>
 public sealed record AnalysisItem(
-    long Id, string Action, string Guideline, string Result, double Confidence, string DecidedBy, string Timestamp);
+    long Id, string Action, string Guideline, string Result, double? Confidence, string DecisionSource, string DecisionReason, string Timestamp);
 
 public sealed record Summary(int Total, IReadOnlyDictionary<string, int> ByResult);
 

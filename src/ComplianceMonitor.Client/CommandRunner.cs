@@ -77,8 +77,8 @@ public sealed class CommandRunner(ComplianceApiClient api, TextWriter output, Te
     {
         var item = await _api.AnalyzeAsync(action, guideline, cancellationToken);
         _out.WriteLine(Invariant($"Result:      {item.Result}"));
-        _out.WriteLine(Invariant($"Confidence:  {item.Confidence:0.00}"));
-        _out.WriteLine(Invariant($"Decided by:  {item.DecidedBy}"));
+        _out.WriteLine(Invariant($"Confidence:  {Confidence(item)}"));
+        _out.WriteLine(Invariant($"Decided by:  {item.DecisionSource} ({item.DecisionReason})"));
         _out.WriteLine(Invariant($"Timestamp:   {item.Timestamp}"));
         _out.WriteLine(Invariant($"Id:          {item.Id}"));
         return ExitCodes.Ok;
@@ -98,7 +98,7 @@ public sealed class CommandRunner(ComplianceApiClient api, TextWriter output, Te
                 var pass = item.Result == briefCase.Expected;
                 passed += pass ? 1 : 0;
                 _out.WriteLine(Invariant(
-                    $"  Case {briefCase.Number}  expected {briefCase.Expected,-8}  actual {item.Result,-8}  ({item.Confidence:0.00}, {item.DecidedBy})  {(pass ? "PASS" : "FAIL")}"));
+                    $"  Case {briefCase.Number}  expected {briefCase.Expected,-8}  actual {item.Result,-8}  ({Confidence(item)}, {item.DecisionReason})  {(pass ? "PASS" : "FAIL")}"));
             }
             catch (ApiErrorException ex)
             {
@@ -124,7 +124,7 @@ public sealed class CommandRunner(ComplianceApiClient api, TextWriter output, Te
         foreach (var item in items)
         {
             _out.WriteLine(Invariant(
-                $"  #{item.Id,-4} {item.Timestamp}  {item.Result,-8} {item.Confidence:0.00}  {Shorten(item.Action)}  |  {Shorten(item.Guideline)}"));
+                $"  #{item.Id,-4} {item.Timestamp}  {item.Result,-8} {Confidence(item),-4}  {Shorten(item.Action)}  |  {Shorten(item.Guideline)}"));
         }
 
         return ExitCodes.Ok;
@@ -189,6 +189,10 @@ public sealed class CommandRunner(ComplianceApiClient api, TextWriter output, Te
             _err.WriteLine(Invariant($"  Retry after {Math.Ceiling(retryAfter.TotalSeconds):0} s."));
         }
     }
+
+    // A policy decision has no model confidence; show that rather than a made-up number.
+    private static string Confidence(AnalysisItem item) =>
+        item.Confidence is { } c ? c.ToString("0.00", CultureInfo.InvariantCulture) : "—";
 
     private static string Shorten(string text) => text.Length <= 40 ? text : string.Concat(text.AsSpan(0, 39), "…");
 
