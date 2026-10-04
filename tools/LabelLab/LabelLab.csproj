@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ComplianceMonitor.LabelLab</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Configuration, user-secrets, DI and HttpClientFactory, without extra NuGet packages. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ComplianceMonitor.Api/ComplianceMonitor.Api.csproj" />
+  </ItemGroup>
+</Project>

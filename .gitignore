@@ -489,3 +489,6 @@ PROCESS-LOG.md
 *.db
 *.db-shm
 *.db-wal
+
+# LabelLab response cache
+.cache/

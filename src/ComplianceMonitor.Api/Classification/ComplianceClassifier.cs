@@ -37,18 +37,31 @@ public sealed class ComplianceClassifier(
         }
 
         var prompt = _strategy.Build(action, guideline);
-        var request = new ZeroShotRequest(
-            prompt.Inputs,
-            new ZeroShotParameters([.. prompt.Labels.Keys], prompt.HypothesisTemplate, prompt.MultiLabel));
+        var scores = await _client.ClassifyAsync(prompt.ToRequest(), cancellationToken);
+        var mapped = LabelScoreMapper.Map(scores, prompt.Labels, _confidenceFloor);
 
-        var scores = await _client.ClassifyAsync(request, cancellationToken);
-        var top = PickTop(scores, prompt.Labels);
+        return new ClassificationOutcome(mapped.Result, mapped.Confidence, mapped.DecidedBy, _strategy.Name, scores);
+    }
+}
 
-        return top.Score < _confidenceFloor
-            ? new ClassificationOutcome(
-                ComplianceResult.Unclear, top.Score, DecisionSource.LowConfidence, _strategy.Name, scores)
-            : new ClassificationOutcome(
-                prompt.Labels[top.Label], top.Score, DecisionSource.Model, _strategy.Name, scores);
+public sealed record MappedScore(ComplianceResult Result, double Confidence, DecisionSource DecidedBy);
+
+/// <summary>
+/// Turns zero-shot scores into a result. Shared by the API and tools/LabelLab so both decide identically.
+/// </summary>
+public static class LabelScoreMapper
+{
+    /// <exception cref="HuggingFacePermanentException">The labels returned are not exactly the labels sent.</exception>
+    public static MappedScore Map(
+        IReadOnlyList<LabelScore> scores, IReadOnlyDictionary<string, ComplianceResult> labels, double confidenceFloor)
+    {
+        ArgumentNullException.ThrowIfNull(scores);
+        ArgumentNullException.ThrowIfNull(labels);
+
+        var top = PickTop(scores, labels);
+        return top.Score < confidenceFloor
+            ? new MappedScore(ComplianceResult.Unclear, top.Score, DecisionSource.LowConfidence)
+            : new MappedScore(labels[top.Label], top.Score, DecisionSource.Model);
     }
 
     // HF sorts by score, but we never rely on position: every label is matched by text,

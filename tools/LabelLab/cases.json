@@ -1,0 +1,81 @@
+[
+  {
+    "brief": true,
+    "action": "Closed ticket #48219 and sent confirmation email",
+    "guideline": "All closed tickets must include a confirmation email",
+    "expected": "COMPLIES"
+  },
+  {
+    "brief": true,
+    "action": "Closed ticket #48219 without sending confirmation email",
+    "guideline": "All closed tickets must include a confirmation email",
+    "expected": "DEVIATES"
+  },
+  {
+    "brief": true,
+    "action": "Rebooted the server and checked logs",
+    "guideline": "Servers must be rebooted weekly and logs reviewed after restart",
+    "expected": "DEVIATES"
+  },
+  {
+    "brief": true,
+    "action": "Skipped torque confirmation at Station 3",
+    "guideline": "No guidelines exist for this case.",
+    "expected": "UNCLEAR"
+  },
+  {
+    "action": "Took a full database backup, then ran the schema migration",
+    "guideline": "A database backup must be taken before any schema migration",
+    "expected": "COMPLIES"
+  },
+  {
+    "action": "Ran the schema migration on production without taking a backup",
+    "guideline": "A database backup must be taken before any schema migration",
+    "expected": "DEVIATES"
+  },
+  {
+    "action": "Wore safety goggles while operating the lathe",
+    "guideline": "Eye protection must be worn when operating machinery",
+    "expected": "COMPLIES"
+  },
+  {
+    "action": "Operated the lathe without eye protection",
+    "guideline": "Eye protection must be worn when operating machinery",
+    "expected": "DEVIATES"
+  },
+  {
+    "action": "Issued the refund two days after the customer asked",
+    "guideline": "Refunds must be issued within 5 business days of the request",
+    "expected": "COMPLIES"
+  },
+  {
+    "action": "Issued the refund three weeks after the customer asked",
+    "guideline": "Refunds must be issued within 5 business days of the request",
+    "expected": "DEVIATES"
+  },
+  {
+    "action": "Performed the scheduled Monday reboot of the server and reviewed the logs afterwards",
+    "guideline": "Servers must be rebooted weekly and logs reviewed after restart",
+    "expected": "COMPLIES"
+  },
+  {
+    "action": "Closed ticket #50112",
+    "guideline": "All closed tickets must include a confirmation email",
+    "expected": "DEVIATES"
+  },
+  {
+    "action": "Watered the plants in the office lobby",
+    "guideline": "All closed tickets must include a confirmation email",
+    "expected": "UNCLEAR"
+  },
+  {
+    "action": "Calibrated the torque wrench at Station 3",
+    "guideline": "Visitors must sign in at reception",
+    "expected": "UNCLEAR"
+  },
+  {
+    "action": "Performed the weekly server reboot and reviewed logs after restart",
+    "guideline": "Servers must be rebooted weekly and logs reviewed after restart",
+    "expected": "COMPLIES"
+  }
+]

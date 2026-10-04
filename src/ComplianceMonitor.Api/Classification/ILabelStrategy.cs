@@ -22,7 +22,11 @@ public sealed record LabelPrompt(
     string Inputs,
     string HypothesisTemplate,
     bool MultiLabel,
-    IReadOnlyDictionary<string, ComplianceResult> Labels);
+    IReadOnlyDictionary<string, ComplianceResult> Labels)
+{
+    public ZeroShotRequest ToRequest() =>
+        new(Inputs, new ZeroShotParameters([.. Labels.Keys], HypothesisTemplate, MultiLabel));
+}
 
 /// <summary>
 /// Stand-in until the real strategies (docs/plan.md, section 3) are written.
