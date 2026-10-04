@@ -56,7 +56,7 @@ public sealed class LabRunner(HuggingFaceZeroShotClient client, double confidenc
         try
         {
             var scores = await _client.ClassifyAsync(prompt.ToRequest(), cancellationToken);
-            var model = LabelScoreMapper.Map(scores, prompt.Labels, _confidenceFloor);
+            var model = LabelScoreMapper.Map(scores, prompt, _confidenceFloor);
             var ranked = scores.Select(s => s.Score).OrderDescending().ToArray();
             var margin = ranked.Length > 1 ? ranked[0] - ranked[1] : ranked[0];
 

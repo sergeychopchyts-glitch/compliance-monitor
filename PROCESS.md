@@ -74,7 +74,7 @@ The commit history is the record: each commit is one step I approved after seein
 | Scaffold, EF Core, endpoints, HF client and resilience, console client, CI | Agent | Well-trodden code that's easy to verify with tests and a live run |
 | Unit, integration and client tests | Agent, to my specs | I specified *what* each step must prove; the agent wrote them, and I reviewed the coverage audit |
 | LabelLab extra cases (`tools/LabelLab/cases.json`) | Agent drafted, I edited | I replaced a duplicate with a compliant counterpart to Case 3. Agent-written expected labels are flagged in the README as needing review |
-| Label strategies (the core NLI judgment) | Me | This is where overfitting to the four brief cases is the main risk. **At the time of writing the placeholder strategy is still in place**, which is why Case 3 fails |
+| Label strategies (the core NLI judgment) | Me: the design and the selection rule. Agent: the implementation | Overfitting to the four brief cases is the main risk here. So the three alternatives were specified in `docs/plan.md` before any measurement, and the rule for choosing was fixed before running them. I then had the agent implement exactly those three, measure all four strategies on 15 cases, and apply the rule with no wording changes. Result: none fixes Case 3, and the placeholder stays the default (best on extra cases) |
 | Final review of README and `PROCESS.md` | Me | Must reflect what actually happened |
 
 ### How I verified the agent's work
@@ -113,10 +113,13 @@ Most of these were caught *by the verification rules above* rather than by readi
 - It flagged that my first curl omitted the guideline, so Cases 3 and 4 couldn't be judged.
 - It noticed when I re-sent prompts for work already committed, and listed where each requirement lived instead of redoing it.
 
-**Still open after the cold review** (not fixed at the time of writing):
-- **No-guideline rule:** it matches substrings, so a guideline *mentioning* "no guideline exists" is wrongly short-circuited to UNCLEAR.
-- **Polly rejections:** circuit-breaker and rate-limiter rejections fall through to a generic 500 instead of 503.
-- **Long inputs:** two 2000-character fields can exceed the model's 1024-token limit.
-- **Case 3:** fails with the placeholder strategy (COMPLIES, 0.62). NLI detects contradiction, not a missing requirement.
+**Found by the cold review, then fixed:**
 
-These, and the label-strategy work, are listed as next steps in the README.
+| Finding | Fix | How it's verified |
+|---|---|---|
+| The no-guideline rule matched substrings, so "If no guideline exists for a station, escalate…" was short-circuited to UNCLEAR | Only a guideline that *is* the statement matches. One existing test input (`"...EXIST here"`) encoded the old behaviour; I was told before it changed | 5 new negative cases, plus a live call that now goes to the model |
+| Circuit-breaker and rate-limiter rejections fell through to a generic 500 | Mapped to the transient exception, so they return 503 (with `Retry-After` from the rate limiter) | Unit tests, and a real-pipeline test where the breaker opens and HF is no longer called. Mutation check: removing the mapping fails exactly those two tests |
+| Long inputs: **measured** that HF silently truncates; a DEVIATES case flipped to COMPLIES once its key sentence was pushed past the limit | A byte-based upper bound on tokens, which can never under-count. Over budget → 400 naming both fields; the classifier also refuses to send it | Boundary tests at exactly 1024 and 1025, multi-byte text, and a live 400 for the input HF had flipped |
+
+**Still open:** Case 3. All three pre-registered strategies were measured, and none returns DEVIATES. Tuning wording until it passes would be fitting the test, not the problem.
+The README's next step is a design change: split the guideline into its requirements and check each one.

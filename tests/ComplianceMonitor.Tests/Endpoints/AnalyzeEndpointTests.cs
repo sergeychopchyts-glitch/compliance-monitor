@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Api.Classification.Strategies;
 using ComplianceMonitor.Api.Errors;
 using ComplianceMonitor.Tests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -324,6 +325,36 @@ public sealed class AnalyzeWiringTests
         }
 
         Assert.True(done(), "The pipeline did not reach the expected state.");
+    }
+
+    [Fact]
+    public async Task Analyze_TooLongForTheModel_Returns400NamingBothFieldsWithoutCallingHf()
+    {
+        var hf = FakeHttpMessageHandler.Returning(HttpStatusCode.OK, "[]");
+        using var factory = new ApiFactory { HuggingFaceHandler = hf };
+
+        using var response = await Post(factory, new string('a', 1500), "Closed tickets need an email");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!;
+        var message = (string?)problem["errors"]?["action"]?[0];
+        Assert.Contains("reads 1024", message, StringComparison.Ordinal);
+        Assert.Equal(message, (string?)problem["errors"]?["guideline"]?[0]);
+        Assert.Empty(hf.Requests);
+        Assert.Empty(await factory.GetAnalysesAsync());
+    }
+
+    [Fact]
+    public async Task Analyze_LongButWithinTheModelBudget_IsClassified()
+    {
+        var hf = FakeHttpMessageHandler.Returning(HttpStatusCode.OK,
+            """[{"label":"violates the guideline","score":0.2},{"label":"complies with the guideline","score":0.8}]""");
+        using var factory = new ApiFactory { HuggingFaceHandler = hf };
+
+        using var response = await Post(factory, new string('a', 900), new string('g', 60)); // exactly 1024
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Single(hf.Requests);
     }
 
     [Fact]

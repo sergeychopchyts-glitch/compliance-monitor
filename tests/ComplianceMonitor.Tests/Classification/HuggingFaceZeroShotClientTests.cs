@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using ComplianceMonitor.Api.Classification;
 using ComplianceMonitor.Tests.Infrastructure;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 
 namespace ComplianceMonitor.Tests.Classification;
@@ -162,6 +164,27 @@ public sealed class HuggingFaceZeroShotClientTests
 
         Assert.True(ex.IsTimeout);
         Assert.Null(ex.UpstreamStatusCode);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_CircuitBreakerOpen_ThrowsTransientNotUnhandled()
+    {
+        var ex = await Assert.ThrowsAsync<HuggingFaceTransientException>(
+            () => Classify(FakeHttpMessageHandler.Throwing(new BrokenCircuitException())));
+
+        Assert.False(ex.IsTimeout);
+        Assert.Null(ex.UpstreamStatusCode);
+        Assert.Equal("Calls to Hugging Face are temporarily suspended (circuit breaker open).", ex.Message);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_RateLimiterRejected_ThrowsTransientWithRetryAfter()
+    {
+        var ex = await Assert.ThrowsAsync<HuggingFaceTransientException>(
+            () => Classify(FakeHttpMessageHandler.Throwing(new RateLimiterRejectedException(TimeSpan.FromSeconds(5)))));
+
+        Assert.Equal(TimeSpan.FromSeconds(5), ex.RetryAfter);
+        Assert.Equal("Calls to Hugging Face are temporarily suspended (rate limit reached).", ex.Message);
     }
 
     [Fact]

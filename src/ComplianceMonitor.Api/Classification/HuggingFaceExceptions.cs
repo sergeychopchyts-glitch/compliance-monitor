@@ -38,6 +38,10 @@ public sealed class HuggingFaceTransientException : HuggingFaceException
     public static HuggingFaceTransientException Unreachable(Exception innerException) =>
         new("Hugging Face could not be reached.", null, isTimeout: false, null, innerException);
 
+    /// <summary>Our own resilience pipeline refused the call (circuit breaker open, or rate limit reached).</summary>
+    public static HuggingFaceTransientException Rejected(string reason, TimeSpan? retryAfter, Exception innerException) =>
+        new($"Calls to Hugging Face are temporarily suspended ({reason}).", null, isTimeout: false, retryAfter, innerException);
+
     public static HuggingFaceTransientException FromStatus(int statusCode, TimeSpan? retryAfter) =>
         new($"Hugging Face returned HTTP {statusCode}.", statusCode, isTimeout: false, retryAfter, null);
 }

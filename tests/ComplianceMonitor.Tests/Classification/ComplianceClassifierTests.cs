@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Api.Classification.Strategies;
 using ComplianceMonitor.Tests.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -58,7 +59,8 @@ public sealed class ComplianceClassifierTests
     [Theory]
     [InlineData("No guidelines exist for this case.")]
     [InlineData("no guideline exists")]
-    [InlineData("NO   GUIDELINES\tEXIST here")]
+    [InlineData("NO   GUIDELINES\tEXIST")]
+    [InlineData("  No guideline.  ")]
     [InlineData("There is no applicable guideline.")]
     [InlineData("No guideline applies to Station 3")]
     public async Task ClassifyAsync_GuidelineSaysNoneExists_ReturnsUnclearByRuleWithoutHttpCall(string guideline)
@@ -78,8 +80,25 @@ public sealed class ComplianceClassifierTests
     [InlineData("All closed tickets must include a confirmation email")]
     [InlineData("Guidelines exist for every station")]
     [InlineData("No ticket may be closed without a guideline review")]
+    [InlineData("If no guideline exists for a station, escalate to the supervisor")]
+    [InlineData("When no guidelines apply, the operator must log the step")]
+    [InlineData("No guidelines exist for this case, so stop the line")]
+    [InlineData("No guidelines exist for this case and operators must stop the line")]
+    [InlineData("No guideline exists yet; ask a supervisor")]
     public void NoGuidelineRule_OrdinaryGuideline_DoesNotMatch(string guideline) =>
         Assert.False(NoGuidelineRule.Matches(guideline));
+
+    [Fact]
+    public async Task ClassifyAsync_GuidelineMerelyMentioningThePhrase_GoesToTheModel()
+    {
+        var handler = Responding((Complies, 0.2), (Deviates, 0.8));
+
+        var outcome = await Classify(handler, "If no guideline exists for a station, escalate to the supervisor");
+
+        Assert.Single(handler.Requests);
+        Assert.Equal(DecisionSource.Model, outcome.DecidedBy);
+        Assert.Equal(ComplianceResult.Deviates, outcome.Result);
+    }
 
     [Fact]
     public async Task ClassifyAsync_SendsStrategyPromptToModel()

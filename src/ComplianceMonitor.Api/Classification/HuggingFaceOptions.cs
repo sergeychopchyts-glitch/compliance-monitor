@@ -19,6 +19,9 @@ public sealed class HuggingFaceOptions
     /// <summary>Budget for a single HTTP attempt; a slower attempt is cancelled and retried.</summary>
     public int AttemptTimeoutSeconds { get; set; } = 10;
 
+    /// <summary>Name of the label strategy (see <see cref="Strategies.LabelStrategies"/> and docs/label-tuning.md).</summary>
+    public string Strategy { get; set; } = "placeholder";
+
     /// <summary>A top score below this gives UNCLEAR with <see cref="DecisionSource.LowConfidence"/>.</summary>
     public double ConfidenceFloor { get; set; } = 0.5;
 
@@ -66,6 +69,13 @@ public sealed class HuggingFaceOptionsValidator : IValidateOptions<HuggingFaceOp
             failures.Add(
                 $"{section}:{nameof(options.AttemptTimeoutSeconds)} must be between 1 and " +
                 $"{section}:{nameof(options.TimeoutSeconds)}.");
+        }
+
+        if (Strategies.LabelStrategies.Find(options.Strategy) is null)
+        {
+            failures.Add(
+                $"{section}:{nameof(options.Strategy)} must be one of: " +
+                string.Join(", ", Strategies.LabelStrategies.All.Select(s => s.Name)) + ".");
         }
 
         if (!double.IsFinite(options.ConfidenceFloor) || options.ConfidenceFloor is < 0 or > 1)

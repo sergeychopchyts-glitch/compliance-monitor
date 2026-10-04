@@ -82,7 +82,9 @@ curl -s -X POST localhost:5080/analyze -H 'Content-Type: application/json' \
 {"id":1,"action":"Closed ticket #48219 and sent confirmation email","guideline":"All closed tickets must include a confirmation email","result":"COMPLIES","confidence":0.88,"decidedBy":"MODEL","timestamp":"2026-10-04T00:40:32Z"}
 ```
 
-Both fields are required, trimmed, and at most 2000 characters. A bad request gets 400 with a ValidationProblemDetails body that names each bad field.
+Both fields are required, trimmed, and at most 2000 characters. Together they must also fit the model's 1024-token input, which in practice means about 950 bytes of text in total.
+Hugging Face silently truncates longer input, which can flip the answer, so the API refuses it up front.
+A bad request gets 400 with a ValidationProblemDetails body that names each bad field.
 `confidence` is rounded to 2 decimals in the response; the database keeps the full score.
 
 **`GET /history`**: newest first. Takes `limit` (1–200, default 50), `offset` (≥ 0) and `result` (optional filter).
@@ -110,20 +112,36 @@ curl -s localhost:5080/summary
 | Invalid input | 400 |
 | HF rejected our token (401/403), other 4xx, unreadable response | 502 |
 | HF 429 / 503 / 5xx / network error, after retries | 503, with `Retry-After` when HF sent one |
+| Our circuit breaker is open, or our rate limit is reached | 503 |
 | HF 402 (credits exhausted) | 503, with its own `type` |
 | HF timeout (10 s per attempt, 30 s total) | 504 |
 | Anything else | 500, generic detail, no stack trace |
 
 ## How classification works
 
-1. **The no-guideline rule.** If the guideline itself says that no guideline exists (a short, case-insensitive phrase list such as "no guidelines exist"), there is nothing to judge against. The result is UNCLEAR with `decidedBy: RULE`, and HF is not called.
-2. **The label strategy** turns (action, guideline) into a zero-shot request: `inputs`, `candidate_labels`, `hypothesis_template` and `multi_label`.
-   The current `PlaceholderLabelStrategy` sends `"Action: …\nGuideline: …"` with the labels *complies with the guideline* → COMPLIES and *violates the guideline* → DEVIATES, using the template `"This action {}."`.
+1. **The no-guideline rule.** If the whole guideline is a statement that no guideline exists (e.g. "No guidelines exist for this case."), there is nothing to judge against. The result is UNCLEAR with `decidedBy: RULE`, and HF is not called.
+   A guideline that merely *mentions* the phrase ("If no guideline exists for a station, escalate…") goes to the model as usual.
+2. **The label strategy** turns (action, guideline) into a zero-shot request: `inputs`, `candidate_labels`, `hypothesis_template` and `multi_label`. It's selected with `HuggingFace:Strategy`, and four are implemented:
+   - `placeholder` (the default): `"Action: …\nGuideline: …"` with *complies with the guideline* / *violates the guideline*, template `"This action {}."`.
+   - `combined-three-label`: the same premise plus an *is unrelated to the guideline* → UNCLEAR label.
+   - `guideline-hypothesis`: the action is the premise, and the guideline is written into each label ("fully satisfies the requirement: …").
+   - `independent-scores`: the two labels scored independently (`multi_label`). The result is UNCLEAR if neither or both reach the floor.
 3. **Mapping.** HF returns labels sorted by score. They are mapped **by label text, never by position**. If any label is unknown, missing or duplicated, the response is treated as a failure, not as UNCLEAR.
 4. **Confidence floor.** If the top score is below `HuggingFace:ConfidenceFloor` (default 0.5), the result is UNCLEAR with `decidedBy: LOW_CONFIDENCE`. Otherwise it's the top label's result with `decidedBy: MODEL`.
 
 `decidedBy` tells a reviewer *why* a result is UNCLEAR. It is stored with the strategy name and the raw HF scores for audit.
-`tools/LabelLab` measures strategies against the brief's cases plus 11 extra ones. Results: [docs/label-tuning.md](docs/label-tuning.md).
+
+**Choosing a strategy.** The three alternatives were specified in `docs/plan.md` before any measurement. The selection rule was also fixed in advance: most brief cases passed, then most extra cases, then widest margin.
+`tools/LabelLab` ran all four against the brief's 4 cases and 11 extra ones ([docs/label-tuning.md](docs/label-tuning.md)):
+
+| Strategy | Brief | Extra | Case 3 |
+|---|---|---|---|
+| placeholder | 3/4 | **8/11** | COMPLIES 0.62 |
+| combined-three-label | 3/4 | 7/11 | COMPLIES 0.88 |
+| guideline-hypothesis | 3/4 | 6/11 | UNCLEAR (low confidence) |
+| independent-scores | 3/4 | 5/11 | UNCLEAR (both labels ~1.0) |
+
+The placeholder wins on extra cases, so it stays the default. The wording was not tuned after seeing the results.
 
 ## Tests
 
@@ -155,8 +173,12 @@ dotnet run --project tools/LabelLab                            # strategy measur
 
 ## Known limitations and next steps
 
-- **Case 3 fails.** "Rebooted the server and checked logs" against a *weekly* reboot rule scores COMPLIES (0.62). NLI detects contradiction, not a missing requirement, and the placeholder strategy has no way to say "not fully satisfied". **Next:** the three strategies in `docs/plan.md` §3: a third "unrelated" label, the guideline written into the hypothesis ("fully satisfies…"), and independent scores with an abstain band. Measure each with LabelLab and pick the one with the best brief and extra-case accuracy.
-- **The confidence floor can't fire today.** With two labels scored against each other, the top score is always at least 0.5. It becomes meaningful with three labels, or with a floor above 0.5.
+- **Case 3 fails with every strategy.** "Rebooted the server and checked logs" against a *weekly* reboot rule: NLI detects contradiction, not a missing requirement.
+  Two strategies at least stop calling it COMPLIES (they return UNCLEAR), but none returns DEVIATES. Deliberately not tuned further: wording changed until one case passes is overfitting.
+  **Next:** split the guideline into its requirements ("rebooted weekly", "logs reviewed after restart") and require the action to entail each one. That's a design change, to be measured on new cases, not just Case 3.
+- **The "unrelated" label never wins.** With strategy A even "Watered the plants" scores COMPLIES, and without the rule every strategy calls Case 4 DEVIATES. That's why the no-guideline rule exists.
+- **The confidence floor can't fire with the default strategy.** With two labels scored against each other, the top score is always at least 0.5. It does fire with `guideline-hypothesis` and `independent-scores`.
+- **The input budget is conservative.** It counts UTF-8 bytes, which can never under-count tokens, rather than real tokens. Text that would fit may be refused; a real BPE tokenizer would be exact, but needs a package outside the allowlist.
 - **The extra LabelLab cases** were written by the coding agent and need human review before their accuracy numbers mean much.
 - **No auth or rate limiting** on the API, and the history response has no total count.
 - **Unparsable query values** (e.g. `limit=abc`) return a framework 400 that doesn't name the parameter. Out-of-range values do name it.
@@ -167,7 +189,8 @@ dotnet run --project tools/LabelLab                            # strategy measur
 
 ```
 src/ComplianceMonitor.Api/          Minimal API host
-  Classification/                   HF client, options, label strategy, classifier, NoGuidelineRule
+  Classification/                   HF client, options, classifier, mapper, NoGuidelineRule, input budget
+    Strategies/                     the four label strategies
   Endpoints/                        /analyze, /history, /summary (one MapGroup)
   Errors/                           IExceptionHandler → ProblemDetails
   Persistence/                      DbContext, AnalysisStore, migrations

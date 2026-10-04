@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Api.Classification.Strategies;
 using ComplianceMonitor.Tests.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,8 @@ public sealed class HuggingFaceResilienceTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private HuggingFaceZeroShotClient CreateClient(FakeHttpMessageHandler hf, Dictionary<string, string?>? settings = null)
+    private HuggingFaceZeroShotClient CreateClient(
+        FakeHttpMessageHandler hf, Dictionary<string, string?>? settings = null, Action<HttpStandardResilienceOptions>? pipeline = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["HuggingFace:ApiToken"] = Token })
@@ -44,7 +46,11 @@ public sealed class HuggingFaceResilienceTests : IDisposable
         services.AddSingleton<TimeProvider>(_time);
         services.AddComplianceClassification(configuration);
         services.AddHttpClient<HuggingFaceZeroShotClient>().ConfigurePrimaryHttpMessageHandler(() => hf);
-        services.PostConfigureAll<HttpStandardResilienceOptions>(options => options.Retry.Delay = TimeSpan.Zero);
+        services.PostConfigureAll<HttpStandardResilienceOptions>(options =>
+        {
+            options.Retry.Delay = TimeSpan.Zero;
+            pipeline?.Invoke(options);
+        });
 
         _provider = services.BuildServiceProvider();
         return _provider.GetRequiredService<HuggingFaceZeroShotClient>();
@@ -217,6 +223,26 @@ public sealed class HuggingFaceResilienceTests : IDisposable
         var log = CallLog();
         Assert.Equal("failed (transient)", log.State["Outcome"]);
         Assert.Equal(4, log.State["Attempts"]);
+    }
+
+    [Fact]
+    public async Task CircuitBreakerOpens_CallerGetsTransientAndHfIsNoLongerCalled()
+    {
+        var hf = Sequence(Status(HttpStatusCode.ServiceUnavailable));
+        // Production needs 100 calls in the window before the breaker can open; two make the test practical.
+        var client = CreateClient(hf, pipeline: options =>
+        {
+            options.CircuitBreaker.MinimumThroughput = 2;
+            options.CircuitBreaker.FailureRatio = 0.5;
+        });
+
+        var first = await Assert.ThrowsAsync<HuggingFaceTransientException>(() => client.ClassifyAsync(Request, Ct));
+        var callsBeforeSecond = hf.Requests.Count;
+        var second = await Assert.ThrowsAsync<HuggingFaceTransientException>(() => client.ClassifyAsync(Request, Ct));
+
+        Assert.Contains("circuit breaker open", first.Message + second.Message, StringComparison.Ordinal);
+        Assert.Equal("Calls to Hugging Face are temporarily suspended (circuit breaker open).", second.Message);
+        Assert.Equal(callsBeforeSecond, hf.Requests.Count); // open breaker: no request reached HF
     }
 
     [Fact]

@@ -123,6 +123,10 @@ public sealed class FakeComplianceClassifier : IComplianceClassifier
 
     public Exception? Throws { get; set; }
 
+    public ModelInputCheck InputCheck { get; set; } = new(true, 100, ModelInputBudget.MaxTokens);
+
+    public ModelInputCheck CheckInput(string action, string guideline) => InputCheck;
+
     public List<(string Action, string Guideline)> Calls { get; } = [];
 
     public Task<ClassificationOutcome> ClassifyAsync(string action, string guideline, CancellationToken cancellationToken)

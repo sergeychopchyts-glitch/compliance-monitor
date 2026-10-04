@@ -18,8 +18,9 @@ Shared settings in `Directory.Build.props`, versions in `Directory.Packages.prop
 
 1. Bind `AnalyzeRequest { action, guideline }`. Unreadable JSON → 400.
 2. Validate: both present, not whitespace, ≤ 2000 chars each, after trimming → else 400 `ValidationProblemDetails`.
+   Then the pair must fit the model's 1024-token input. The bound is UTF-8 bytes of the premise plus the longest hypothesis plus 4 special tokens; byte-level BPE can't exceed it. Over budget → 400 naming both fields (added 2026-10-04, after measuring that HF silently truncates and the answer can flip).
 3. `IComplianceClassifier.ClassifyAsync(action, guideline, ct)`:
-   1. **Rule:** if the guideline says no guideline exists (short case-insensitive phrase list, `NoGuidelineRule`) → UNCLEAR, `DecidedBy=RULE`, confidence 1.0, no HTTP call.
+   1. **Rule:** if the *whole* guideline is a "no guideline exists" statement (optionally with a short qualifier such as "for this case"), `NoGuidelineRule` → UNCLEAR, `DecidedBy=RULE`, confidence 1.0, no HTTP call. A guideline that merely mentions the phrase goes to the model.
    2. The active `ILabelStrategy` builds the HF payload (`inputs`, `candidate_labels`, `hypothesis_template`, `multi_label`).
    3. POST through a typed `HttpClient` with `AddStandardResilienceHandler`: up to 3 retries with exponential backoff and jitter on 408 / 429 / 5xx / network errors / attempt timeouts, honouring `Retry-After`; never 400/401/402/403. `HuggingFace:AttemptTimeoutSeconds` (10) per attempt, `HuggingFace:TimeoutSeconds` (30) in total; `HttpClient.Timeout` is a backstop 10 s above the total. One structured log line per call: outcome, status, attempts, latency.
    4. Failures throw `HuggingFaceTransientException` (timeout, network, 408, 429, 5xx) or `HuggingFacePermanentException` (other 4xx incl. 400/401/402/403, malformed body). Both carry the upstream status (table in 4).
@@ -44,7 +45,9 @@ Three strategies, measured against the four cases in Step 3:
 - **B. Action as premise, guideline in the hypothesis.** This is the textbook NLI framing. `inputs` = action only. The labels embed the guideline: `"fully satisfies the requirement: {guideline}"`, `"fails the requirement: {guideline}"`, `"has nothing to do with the requirement: {guideline}"`. The template is `"This action {}."`. The labels contain user text, so the strategy keeps its own label→result table per request. "Fully" is there to push partial matches (Case 3) towards DEVIATES.
 - **C. Two labels, independent scores, abstain band.** Use the same premise as A, but only the comply/violate labels, with `multi_label=true`. The result is COMPLIES if the comply score is ≥ T_high and the violate score is < T_low, and DEVIATES the other way round. Anything else is UNCLEAR, which covers both labels low and both labels high. UNCLEAR comes from the scores themselves, not from a third label.
 
-The strategy is chosen by config (`HuggingFace:Strategy`), and labels and thresholds live in config too. `tools/LabelLab` runs every strategy against the cases in `tools/LabelLab/cases.json` and writes `docs/label-tuning.md`. The strategy that passes the most cases with the widest margin wins. Ties are broken by fewest moving parts.
+The strategy is chosen by config (`HuggingFace:Strategy`); labels are fixed in code and pinned by tests. C uses the single `ConfidenceFloor` as both thresholds: UNCLEAR when neither verdict label reaches it, or both do.
+**Measured 2026-10-04** (selection rule fixed before running: brief cases, then extra cases, then margin): every strategy scored 3/4 on brief cases. On extra cases: placeholder 8/11, A 7/11, B 6/11, C 5/11. Placeholder stays the default.
+No strategy gets Case 3 right (B and C return UNCLEAR, A and the placeholder COMPLIES). The wording was not tuned afterwards. `tools/LabelLab` runs every strategy against the cases in `tools/LabelLab/cases.json` and writes `docs/label-tuning.md`. The strategy that passes the most cases with the widest margin wins. Ties are broken by fewest moving parts.
 
 **Every way UNCLEAR can arise** (never because something failed; `DecidedBy` says which)
 1. `RULE`: the guideline states that no guideline exists (decided 2026-10-03; supersedes the original A1).
@@ -84,6 +87,7 @@ Errors are RFC 7807 (`application/problem+json`) with `type`, `title`, `status`,
 | HF 429 (after retries) | 503 | our quota, not the caller's (Q1); `Retry-After` passed through |
 | HF 402 (credits exhausted) | 503 | not retried; distinct `type` so operators can tell |
 | HF other 5xx / network failure (after retries) | 503 | transient |
+| Our circuit breaker open, or our rate limit reached | 503 | transient; `Retry-After` from the rate limiter when known |
 | HF other 4xx, malformed body, unmappable labels | 502 | permanent |
 
 A missing token is not a runtime error: `ValidateOnStart` stops the API from booting, with a message naming `HuggingFace:ApiToken`.

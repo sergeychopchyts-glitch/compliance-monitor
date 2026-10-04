@@ -87,6 +87,17 @@ public static class AnalysisEndpoints
             return TypedResults.ValidationProblem(errors);
         }
 
+        var input = classifier.CheckInput(action, guideline);
+        if (!input.Fits)
+        {
+            string[] tooLong =
+            [
+                $"The action and guideline together are too long for the model: they may need up to {input.TokenUpperBound} " +
+                $"tokens and it reads {input.MaxTokens}. Shorten either one.",
+            ];
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["action"] = tooLong, ["guideline"] = tooLong });
+        }
+
         var outcome = await classifier.ClassifyAsync(action, guideline, cancellationToken);
 
         var record = await store.AddAsync(new AnalysisRecord

@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 
 namespace ComplianceMonitor.Api.Classification;
@@ -119,6 +121,15 @@ public sealed partial class HuggingFaceZeroShotClient(
         catch (HttpRequestException ex)
         {
             throw HuggingFaceTransientException.Unreachable(ex);
+        }
+        catch (BrokenCircuitException ex)
+        {
+            // After repeated failures the pipeline stops calling HF for a while; that's "unavailable", not a 500.
+            throw HuggingFaceTransientException.Rejected("circuit breaker open", null, ex);
+        }
+        catch (RateLimiterRejectedException ex)
+        {
+            throw HuggingFaceTransientException.Rejected("rate limit reached", ex.RetryAfter, ex);
         }
     }
 

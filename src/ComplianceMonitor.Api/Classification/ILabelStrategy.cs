@@ -27,26 +27,3 @@ public sealed record LabelPrompt(
     public ZeroShotRequest ToRequest() =>
         new(Inputs, new ZeroShotParameters([.. Labels.Keys], HypothesisTemplate, MultiLabel));
 }
-
-/// <summary>
-/// Stand-in until the real strategies (docs/plan.md, section 3) are written.
-/// Uses the two labels from docs/hf-sample-response.json.
-/// </summary>
-public sealed class PlaceholderLabelStrategy : ILabelStrategy
-{
-    public const string CompliesLabel = "complies with the guideline";
-    public const string DeviatesLabel = "violates the guideline";
-
-    public string Name => "placeholder";
-
-    public LabelPrompt Build(string action, string guideline) =>
-        new(
-            Inputs: $"Action: {action}\nGuideline: {guideline}",
-            HypothesisTemplate: "This action {}.",
-            MultiLabel: false,
-            Labels: new OrderedDictionary<string, ComplianceResult>(StringComparer.Ordinal)
-            {
-                [CompliesLabel] = ComplianceResult.Complies,
-                [DeviatesLabel] = ComplianceResult.Deviates,
-            });
-}

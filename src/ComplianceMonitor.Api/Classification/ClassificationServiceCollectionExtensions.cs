@@ -1,3 +1,4 @@
+using ComplianceMonitor.Api.Classification.Strategies;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 
@@ -50,7 +51,8 @@ public static class ClassificationServiceCollectionExtensions
                 pipeline.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(Math.Max(30, 2 * attempt.TotalSeconds));
             });
 
-        services.AddSingleton<ILabelStrategy, PlaceholderLabelStrategy>();
+        services.AddSingleton(provider =>
+            LabelStrategies.Find(provider.GetRequiredService<IOptions<HuggingFaceOptions>>().Value.Strategy)!);
         services.AddTransient<IComplianceClassifier, ComplianceClassifier>();
 
         return services;

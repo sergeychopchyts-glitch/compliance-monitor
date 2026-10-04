@@ -1,6 +1,7 @@
 // Measures label strategies against the live Hugging Face API.
 // Usage: dotnet run --project tools/LabelLab [-- --strategy <name>]
 using ComplianceMonitor.Api.Classification;
+using ComplianceMonitor.Api.Classification.Strategies;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -39,12 +40,8 @@ internal static class Program
         }
 
         var strategyFilter = configuration["strategy"];
-        var strategies = typeof(ILabelStrategy).Assembly.GetTypes()
-            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ILabelStrategy).IsAssignableFrom(t)
-                && t.GetConstructor(Type.EmptyTypes) is not null)
-            .Select(t => (ILabelStrategy)Activator.CreateInstance(t)!)
+        var strategies = LabelStrategies.All
             .Where(s => strategyFilter is null || s.Name.Equals(strategyFilter, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.Name, StringComparer.Ordinal)
             .ToList();
         if (strategies.Count == 0)
         {

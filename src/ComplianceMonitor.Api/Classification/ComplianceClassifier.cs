@@ -4,7 +4,11 @@ namespace ComplianceMonitor.Api.Classification;
 
 public interface IComplianceClassifier
 {
+    /// <summary>Whether this pair fits the model's input without truncation. Callers validate with it first.</summary>
+    ModelInputCheck CheckInput(string action, string guideline);
+
     /// <exception cref="HuggingFaceException">The model could not be used. Nothing should be stored.</exception>
+    /// <exception cref="ArgumentException">The pair does not fit the model's input (see <see cref="CheckInput"/>).</exception>
     Task<ClassificationOutcome> ClassifyAsync(string action, string guideline, CancellationToken cancellationToken);
 }
 
@@ -29,6 +33,11 @@ public sealed partial class ComplianceClassifier(
     private readonly double _confidenceFloor = options.Value.ConfidenceFloor;
     private readonly ILogger<ComplianceClassifier> _logger = logger;
 
+    public ModelInputCheck CheckInput(string action, string guideline) =>
+        NoGuidelineRule.Matches(guideline)
+            ? new ModelInputCheck(true, 0, ModelInputBudget.MaxTokens) // decided by the rule; the model is never asked
+            : ModelInputBudget.Check(_strategy.Build(action, guideline));
+
     public async Task<ClassificationOutcome> ClassifyAsync(
         string action, string guideline, CancellationToken cancellationToken)
     {
@@ -40,8 +49,14 @@ public sealed partial class ComplianceClassifier(
         }
 
         var prompt = _strategy.Build(action, guideline);
+        if (!ModelInputBudget.Check(prompt).Fits)
+        {
+            // Never send a prompt HF would silently truncate; the endpoint rejects these with a 400 first.
+            throw new ArgumentException("The action and guideline do not fit the model's input.", nameof(action));
+        }
+
         var scores = await _client.ClassifyAsync(prompt.ToRequest(), cancellationToken);
-        var mapped = LabelScoreMapper.Map(scores, prompt.Labels, _confidenceFloor);
+        var mapped = LabelScoreMapper.Map(scores, prompt, _confidenceFloor);
 
         LogClassified(_logger, _strategy.Name, mapped.Result, mapped.DecidedBy, mapped.Confidence);
         return new ClassificationOutcome(mapped.Result, mapped.Confidence, mapped.DecidedBy, _strategy.Name, scores);
@@ -52,76 +67,4 @@ public sealed partial class ComplianceClassifier(
         Message = "Classified with strategy {Strategy}: {Result} decided by {DecidedBy}, confidence {Confidence}")]
     private static partial void LogClassified(
         ILogger logger, string strategy, ComplianceResult result, DecisionSource decidedBy, double confidence);
-}
-
-public sealed record MappedScore(ComplianceResult Result, double Confidence, DecisionSource DecidedBy);
-
-/// <summary>
-/// Turns zero-shot scores into a result. Shared by the API and tools/LabelLab so both decide identically.
-/// </summary>
-public static class LabelScoreMapper
-{
-    /// <exception cref="HuggingFacePermanentException">The labels returned are not exactly the labels sent.</exception>
-    public static MappedScore Map(
-        IReadOnlyList<LabelScore> scores, IReadOnlyDictionary<string, ComplianceResult> labels, double confidenceFloor)
-    {
-        ArgumentNullException.ThrowIfNull(scores);
-        ArgumentNullException.ThrowIfNull(labels);
-
-        var top = PickTop(scores, labels);
-        return top.Score < confidenceFloor
-            ? new MappedScore(ComplianceResult.Unclear, top.Score, DecisionSource.LowConfidence)
-            : new MappedScore(labels[top.Label], top.Score, DecisionSource.Model);
-    }
-
-    // HF sorts by score, but we never rely on position: every label is matched by text,
-    // and the response must cover exactly the labels we sent.
-    private static LabelScore PickTop(
-        IReadOnlyList<LabelScore> scores, IReadOnlyDictionary<string, ComplianceResult> labels)
-    {
-        var returned = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var score in scores)
-        {
-            if (!labels.ContainsKey(score.Label))
-            {
-                throw HuggingFacePermanentException.Malformed("a returned label was not one we sent");
-            }
-
-            if (!returned.Add(score.Label))
-            {
-                throw HuggingFacePermanentException.Malformed("a label was returned twice");
-            }
-        }
-
-        if (returned.Count != labels.Count)
-        {
-            throw HuggingFacePermanentException.Malformed("a candidate label is missing from the response");
-        }
-
-        return scores.MaxBy(s => s.Score)!;
-    }
-}
-
-/// <summary>
-/// Precondition: when the guideline itself says there is no guideline, there is nothing to
-/// judge against, so the result is UNCLEAR without asking the model. Deliberately a short,
-/// explicit phrase list; outcomes are marked <see cref="DecisionSource.Rule"/>.
-/// </summary>
-public static class NoGuidelineRule
-{
-    private static readonly string[] Phrases =
-    [
-        "no guideline exists",
-        "no guidelines exist",
-        "no guideline applies",
-        "no guidelines apply",
-        "no applicable guideline",
-    ];
-
-    public static bool Matches(string guideline)
-    {
-        ArgumentNullException.ThrowIfNull(guideline);
-        var normalized = string.Join(' ', guideline.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return Phrases.Any(p => normalized.Contains(p, StringComparison.OrdinalIgnoreCase));
-    }
 }
