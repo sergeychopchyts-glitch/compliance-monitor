@@ -49,6 +49,11 @@ public class ApiFactory : WebApplicationFactory<Program>
 
     public FakeHttpMessageHandler? HuggingFaceHandler { get; init; }
 
+    public bool MigrateOnStartup { get; init; } = true;
+
+    /// <summary>Points the API at a different database (e.g. an unreachable one) instead of the in-memory one.</summary>
+    public string? ConnectionStringOverride { get; init; }
+
     /// <summary>Null leaves the token to the app's own configuration sources (e.g. the environment).</summary>
     protected virtual string? ApiToken => FakeToken;
 
@@ -74,7 +79,8 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         var settings = new Dictionary<string, string?>
         {
-            [$"ConnectionStrings:{ComplianceDbContext.ConnectionStringName}"] = _connectionString,
+            [$"ConnectionStrings:{ComplianceDbContext.ConnectionStringName}"] = ConnectionStringOverride ?? _connectionString,
+            ["Database:MigrateOnStartup"] = MigrateOnStartup ? "true" : "false",
         };
         if (ApiToken is not null)
         {

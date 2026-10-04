@@ -51,7 +51,7 @@ public sealed class OpenApiTests
     {
         var paths = (await GetDocument())["paths"]!.AsObject();
 
-        Assert.Equal(["/analyze", "/health", "/history", "/summary"], paths.Select(p => p.Key).Order());
+        Assert.Equal(["/analyze", "/history", "/summary"], paths.Select(p => p.Key).Order());
     }
 
     [Theory]

@@ -20,6 +20,7 @@ public static class DependencyInjection
         services.AddScoped<AnalysisRepository>();
         services.AddHybridCache();
         services.AddScoped<IAnalysisRepository, CachedAnalysisRepository>();
+        services.AddHealthChecks().AddCheck<DatabaseHealthCheck>(DatabaseHealthCheck.Name, tags: [DatabaseHealthCheck.ReadyTag]);
 
         services.AddHuggingFaceClient(configuration);
         services.AddSingleton<ILabelStrategy, ComplianceZeroShotStrategy>();

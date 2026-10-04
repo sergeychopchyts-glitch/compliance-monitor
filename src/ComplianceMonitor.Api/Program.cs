@@ -9,6 +9,7 @@ using ComplianceMonitor.Api.RateLimiting;
 using ComplianceMonitor.Application.Compliance;
 using ComplianceMonitor.Infrastructure;
 using ComplianceMonitor.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -74,8 +75,11 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+// A local-development convenience (on in appsettings.json). In production, run migrations as a deployment step
+// with schema-change permissions and set Database:MigrateOnStartup=false; /health/ready reports pending migrations.
+if (app.Configuration.GetValue("Database:MigrateOnStartup", false))
 {
+    using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<ComplianceDbContext>().Database.Migrate();
 }
 
@@ -89,8 +93,9 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.MapGet("/health", () => TypedResults.Ok(new { status = "ok" }))
-    .WithName("Health");
+// Liveness: the process answers (no checks). Readiness: the database is reachable and migrated.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains(DatabaseHealthCheck.ReadyTag) });
 
 app.MapGroup("")
     .WithTags("Analysis")
