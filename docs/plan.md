@@ -7,8 +7,10 @@ Status: agreed (2026-10-03). Assumptions are marked **A**, open questions **Q** 
 | Project | Responsibility |
 |---------|----------------|
 | `src/ComplianceMonitor.Api` | Minimal-API host. `Classification/`: HF client, label strategies, label→result mapping. `Persistence/`: DbContext, entity, migrations. `Endpoints/`: the three endpoints and request validation. `Errors/`: one `IExceptionHandler` that turns classification failures into ProblemDetails. |
-| `src/ComplianceMonitor.Client` | Console app: `analyze`, `history`, `summary`, `cases`. Typed `HttpClient`, prints ProblemDetails, no stack traces, non-zero exit code on failure. |
-| `tests/ComplianceMonitor.Tests` | One xunit.v3 project covering unit, integration and Live tests for API and client. |
+| `src/ComplianceMonitor.Client` | Console app: `demo` (default), `analyze`, `run-cases`, `history`, `summary`. Typed `ComplianceApiClient`, a `CommandRunner` writing to injected `TextWriter`s, hand-rolled argument parsing. Base URL: `--base-url`, else `COMPLIANCE_API_URL`, else `http://localhost:5080`. No stack traces; exit codes 0 ok, 1 case failed, 2 unreachable/timeout, 3 API error, 64 usage, 130 Ctrl+C. |
+| `tests/ComplianceMonitor.Tests` | xunit.v3: unit, integration and Live tests for the API, plus LabelLab. |
+| `tests/ComplianceMonitor.Client.Tests` | xunit.v3: the client end to end through `ClientApp.RunAsync` over a fake API (separate project, decided 2026-10-03). |
+| `tools/LabelLab` | Measures label strategies against live HF; writes `docs/label-tuning.md`. |
 
 Shared settings in `Directory.Build.props`, versions in `Directory.Packages.props`.
 
@@ -119,7 +121,7 @@ All access goes through `AnalysisStore` (no generic repository): `AddAsync`, `Ge
   - Every row of the failure table returns the right status and ProblemDetails shape, and the database stays empty.
   - JSON shape: uppercase result strings, a trailing `Z`, and all three summary keys.
   - History order and limit.
-  - Client against an in-process API, including "API down".
+  - Client (`ComplianceMonitor.Client.Tests`): every command's output and request, base-URL precedence, usage errors, and each error path (unreachable, timeout, 400 field errors, 502/503/504 with Retry-After, unreadable bodies, Ctrl+C) with its exit code.
 - **Live** (`[Trait("Category","Live")]`, `Explicit = true`, skipped without a token): the four brief cases through the real classifier. Plain `dotnet test` never runs them, so it makes no network calls even where a token is configured; non-Live API tests also run behind a handler that fails on any network access. Run with `dotnet test -- --filter-trait "Category=Live" --explicit on`.
 
 ## 7. Assumptions and questions

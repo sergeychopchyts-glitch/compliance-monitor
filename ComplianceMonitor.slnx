@@ -4,6 +4,7 @@
     <Project Path="src/ComplianceMonitor.Client/ComplianceMonitor.Client.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ComplianceMonitor.Client.Tests/ComplianceMonitor.Client.Tests.csproj" />
     <Project Path="tests/ComplianceMonitor.Tests/ComplianceMonitor.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
