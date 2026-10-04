@@ -7,13 +7,13 @@ Every successful classification is stored in SQLite and exposed through `/histor
 
 **Prerequisites:** .NET SDK 10.0.4xx (pinned in `global.json`) and a Hugging Face account. No database setup: SQLite migrations run on startup.
 
-**1. Create a token.** <!-- TODO: check the exact wording in the HF UI -->
-On huggingface.co go to *Settings → Access Tokens → Create new token*, choose a **fine-grained** token, and tick **"Make calls to Inference Providers"**.
+**1. Create a token.** Create a **fine-grained** token with the **"Make calls to Inference Providers"** permission.
+[This link](https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained) opens the form with both already selected (from the [Inference Providers docs](https://huggingface.co/docs/inference-providers/index#authentication)).
 
 **2. Store the token** with user-secrets. Never put it in `appsettings*.json`; a test fails if you do.
 
 ```bash
-git clone <repo-url> && cd compliance-monitor   # TODO: not run in this session
+git clone https://github.com/sergeychopchyts-glitch/compliance-monitor.git && cd compliance-monitor
 dotnet user-secrets set HuggingFace:ApiToken <your-token> --project src/ComplianceMonitor.Api
 ```
 
@@ -25,7 +25,7 @@ Outside Development, set the environment variable `HuggingFace__ApiToken` instea
 dotnet run --project src/ComplianceMonitor.Api
 ```
 
-Interactive API docs: http://localhost:5080/scalar <!-- TODO: not opened in this session --> (Development only).
+Interactive API docs (Development only): http://localhost:5080/scalar, which redirects to `/scalar/v1`. The raw OpenAPI document is at `/openapi/v1.json`.
 `src/ComplianceMonitor.Api/ComplianceMonitor.Api.http` has every request ready to send from VS Code or Rider.
 
 **4. Run the client demo** in a second terminal. It sends the brief's four cases, then shows history and summary.
@@ -46,11 +46,23 @@ Brief cases
 Case 3 is a known limitation (see below). Other client commands:
 
 ```bash
+dotnet run --project src/ComplianceMonitor.Client -- analyze \
+  --action "Wore safety goggles while operating the lathe" \
+  --guideline "Eye protection must be worn when operating machinery"
+```
+```
+Result:      COMPLIES
+Confidence:  0.92
+Decided by:  MODEL
+Timestamp:   2026-10-04T01:27:51Z
+Id:          10
+```
+
+```bash
+dotnet run --project src/ComplianceMonitor.Client -- run-cases              # only the four brief cases (exit 1 while Case 3 fails)
 dotnet run --project src/ComplianceMonitor.Client -- summary
-dotnet run --project src/ComplianceMonitor.Client -- history --limit 500   # shows the API's 400 field error
-dotnet run --project src/ComplianceMonitor.Client -- analyze --action "..." --guideline "..."   # TODO: only run in tests
-dotnet run --project src/ComplianceMonitor.Client -- run-cases                                  # TODO: run via demo only
-dotnet run --project src/ComplianceMonitor.Client -- --help                                     # TODO: only run in tests
+dotnet run --project src/ComplianceMonitor.Client -- history --limit 500    # the API's 400, shown as a field error (exit 3)
+dotnet run --project src/ComplianceMonitor.Client -- --help                 # all commands, options and exit codes
 ```
 
 The base URL comes from `--base-url`, else `COMPLIANCE_API_URL`, else `http://localhost:5080`.
@@ -170,6 +182,6 @@ CLAUDE.md                           Instructions given to the coding agent
 Migrations (only needed when the model changes):
 
 ```bash
-dotnet tool restore   # TODO: not run in this session (dotnet-ef was installed with `dotnet tool install`)
+dotnet tool restore   # installs dotnet-ef 10.0.12 from dotnet-tools.json
 dotnet ef migrations add <Name> --project src/ComplianceMonitor.Api --output-dir Persistence/Migrations
 ```
