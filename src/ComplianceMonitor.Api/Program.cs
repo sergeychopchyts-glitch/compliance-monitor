@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using ComplianceMonitor.Api.Classification;
 using ComplianceMonitor.Api.Endpoints;
 using ComplianceMonitor.Api.Errors;
@@ -8,6 +10,10 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+// camelCase properties (web default); enums as strings. ComplianceResult and DecisionSource also carry
+// [JsonStringEnumMemberName] so they serialize the same way outside HTTP (database, logs, tests).
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper)));
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<HuggingFaceExceptionHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -34,6 +40,6 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/health", () => TypedResults.Ok(new { status = "ok" }))
     .WithName("Health");
-app.MapAnalyzeEndpoints();
+app.MapAnalysisEndpoints();
 
 app.Run();

@@ -1,0 +1,54 @@
+@host = http://localhost:5080
+
+### Case 1 (expected COMPLIES)
+POST {{host}}/analyze
+Content-Type: application/json
+
+{
+  "action": "Closed ticket #48219 and sent confirmation email",
+  "guideline": "All closed tickets must include a confirmation email"
+}
+
+### Case 2 (expected DEVIATES)
+POST {{host}}/analyze
+Content-Type: application/json
+
+{
+  "action": "Closed ticket #48219 without sending confirmation email",
+  "guideline": "All closed tickets must include a confirmation email"
+}
+
+### Case 3 (expected DEVIATES)
+POST {{host}}/analyze
+Content-Type: application/json
+
+{
+  "action": "Rebooted the server and checked logs",
+  "guideline": "Servers must be rebooted weekly and logs reviewed after restart"
+}
+
+### Case 4 (expected UNCLEAR)
+POST {{host}}/analyze
+Content-Type: application/json
+
+{
+  "action": "Skipped torque confirmation at Station 3",
+  "guideline": "No guidelines exist for this case."
+}
+
+### Invalid input (expected 400 ValidationProblemDetails)
+POST {{host}}/analyze
+Content-Type: application/json
+
+{
+  "action": "   "
+}
+
+### History, newest first (limit 1-200, default 50)
+GET {{host}}/history
+
+### History, paged and filtered
+GET {{host}}/history?limit=10&offset=0&result=DEVIATES
+
+### Summary
+GET {{host}}/summary

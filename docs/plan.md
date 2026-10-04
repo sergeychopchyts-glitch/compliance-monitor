@@ -55,14 +55,18 @@ A classification *failure* (HF error, unknown or missing label, empty array, sco
 
 ## 4. JSON contracts and failure codes
 
+All three endpoints are one `MapGroup` tagged "Analysis". JSON is camelCase; enums are strings
+(`JsonStringEnumConverter` with `SnakeCaseUpper`, plus `[JsonStringEnumMemberName]` on our two enums), and OpenAPI shows them as string enums.
+
 `POST /analyze` request `{ "action": "...", "guideline": "..." }` → 200
 ```json
-{ "action": "...", "guideline": "...", "result": "COMPLIES", "confidence": 0.9238, "timestamp": "2025-10-03T10:15:00Z" }
+{ "id": 1, "action": "...", "guideline": "...", "result": "COMPLIES", "confidence": 0.88, "decidedBy": "MODEL", "timestamp": "2025-10-03T10:15:00Z" }
 ```
-`GET /history?limit=100` → 200, newest first (`limit` 1–1000, default 100):
-```json
-[ { "id": 7, "action": "...", "guideline": "...", "result": "DEVIATES", "confidence": 0.81, "timestamp": "2025-10-03T10:16:02Z" } ]
-```
+`confidence` is rounded to 2 decimals in responses (decided 2026-10-03, supersedes Q2); the database keeps full precision.
+`decidedBy` is `MODEL`, `RULE` or `LOW_CONFIDENCE`.
+
+`GET /history?limit=50&offset=0&result=DEVIATES` → 200, array of the same item shape, newest first.
+`limit` 1–200 (default 50), `offset` ≥ 0 (default 0), `result` optional (API names, case-insensitive). Out of range → 400 naming the field.
 `GET /summary` → 200, all three keys always present:
 ```json
 { "total": 4, "byResult": { "COMPLIES": 1, "DEVIATES": 2, "UNCLEAR": 1 } }
@@ -124,12 +128,12 @@ Assumptions:
 - **A1** ~~Nothing special-cases "No guidelines exist".~~ Revised 2026-10-03: an explicit, visible `NoGuidelineRule` precondition handles it (`DecidedBy=RULE`); everything else is decided by the model.
 - **A2** Case 3 is hard for NLI, because the action doesn't contradict "weekly". If no strategy gets it, I'll report that rather than force it.
 - **A3** 2000-char limit per field; inputs are trimmed before storage.
-- **A4** `confidence` = score of the winning label. For UNCLEAR via `LOW_CONFIDENCE` it's the top score; via `RULE` it's 1.0. Full precision, not rounded.
+- **A4** `confidence` = score of the winning label. For UNCLEAR via `LOW_CONFIDENCE` it's the top score; via `RULE` it's 1.0. Stored at full precision; rounded to 2 decimals in responses.
 - **A5** No auth on our API, no paging beyond `limit`, no delete endpoint.
 
 Questions (resolved 2026-10-03: "go with your assumptions"):
 - **Q1** HF 429 → **503** to the caller; it is our quota, not theirs.
-- **Q2** `confidence` → **full precision**, not rounded.
+- **Q2** `confidence` → ~~full precision~~ revised 2026-10-03: rounded to 2 decimals in responses, full precision in the database.
 - **Q3** Store raw scores and strategy name → **yes**, columns `Strategy` and `ScoresJson` (section 5). Not exposed in the API.
 - **Q4** Measuring strategies against the real HF API in Step 3 (about 16 calls) → **yes**.
 

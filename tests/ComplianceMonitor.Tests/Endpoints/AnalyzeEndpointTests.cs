@@ -29,24 +29,29 @@ public sealed class AnalyzeEndpointTests
         JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!;
 
     [Fact]
-    public async Task Analyze_Valid_ReturnsBriefContractAndStoresRow()
+    public async Task Analyze_Valid_ReturnsContractAndStoresRow()
     {
         using var factory = new ApiFactory();
 
         using var response = await Post(factory, new { action = $"  {Action} ", guideline = Guideline });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var raw = await response.Content.ReadAsStringAsync(Ct);
+        Assert.Contains("\"result\":\"COMPLIES\"", raw, StringComparison.Ordinal);
+        Assert.Contains("\"timestamp\":\"2026-10-03T10:15:00Z\"", raw, StringComparison.Ordinal);
         var expected = JsonNode.Parse($$"""
             {
+              "id": 1,
               "action": "{{Action}}",
               "guideline": "{{Guideline}}",
               "result": "COMPLIES",
               "confidence": 0.94,
+              "decidedBy": "MODEL",
               "timestamp": "2026-10-03T10:15:00Z"
             }
             """);
-        var body = await ReadJson(response);
-        Assert.True(JsonNode.DeepEquals(expected, body), body.ToJsonString());
+        var body = JsonNode.Parse(raw)!;
+        Assert.True(JsonNode.DeepEquals(expected, body), raw);
 
         Assert.Equal([(Action, Guideline)], factory.Classifier.Calls);
         var row = Assert.Single(await factory.GetAnalysesAsync());
@@ -62,19 +67,37 @@ public sealed class AnalyzeEndpointTests
     }
 
     [Theory]
-    [InlineData(ComplianceResult.Deviates, DecisionSource.Model, "DEVIATES")]
-    [InlineData(ComplianceResult.Unclear, DecisionSource.LowConfidence, "UNCLEAR")]
-    [InlineData(ComplianceResult.Unclear, DecisionSource.Rule, "UNCLEAR")]
-    public async Task Analyze_EachResult_SerializesAsUppercaseString(
-        ComplianceResult result, DecisionSource decidedBy, string expected)
+    [InlineData(ComplianceResult.Deviates, DecisionSource.Model, "DEVIATES", "MODEL")]
+    [InlineData(ComplianceResult.Unclear, DecisionSource.LowConfidence, "UNCLEAR", "LOW_CONFIDENCE")]
+    [InlineData(ComplianceResult.Unclear, DecisionSource.Rule, "UNCLEAR", "RULE")]
+    public async Task Analyze_EachResult_SerializesAsUppercaseStrings(
+        ComplianceResult result, DecisionSource decidedBy, string expectedResult, string expectedDecidedBy)
     {
         using var factory = new ApiFactory();
         factory.Classifier.Outcome = new ClassificationOutcome(result, 0.7, decidedBy, "fake", []);
 
         using var response = await Post(factory, new { action = Action, guideline = Guideline });
 
-        Assert.Equal(expected, (string?)(await ReadJson(response))["result"]);
+        var raw = await response.Content.ReadAsStringAsync(Ct);
+        Assert.Contains($"\"result\":\"{expectedResult}\"", raw, StringComparison.Ordinal);
+        Assert.Contains($"\"decidedBy\":\"{expectedDecidedBy}\"", raw, StringComparison.Ordinal);
         Assert.Equal(decidedBy, Assert.Single(await factory.GetAnalysesAsync()).DecidedBy);
+    }
+
+    [Theory]
+    [InlineData(0.8778579235076904, 0.88)]
+    [InlineData(0.125, 0.13)]
+    [InlineData(0.994, 0.99)]
+    [InlineData(1.0, 1.0)]
+    public async Task Analyze_RoundsConfidenceInResponseButStoresFullPrecision(double score, double expected)
+    {
+        using var factory = new ApiFactory();
+        factory.Classifier.Outcome = new ClassificationOutcome(ComplianceResult.Complies, score, DecisionSource.Model, "fake", []);
+
+        using var response = await Post(factory, new { action = Action, guideline = Guideline });
+
+        Assert.Equal(expected, (double?)(await ReadJson(response))["confidence"]);
+        Assert.Equal(score, Assert.Single(await factory.GetAnalysesAsync()).Confidence);
     }
 
     public static TheoryData<string, string> InvalidBodies => new()

@@ -49,6 +49,15 @@ public class ApiFactory : WebApplicationFactory<Program>
         return await db.Analyses.AsNoTracking().OrderBy(a => a.Id).ToListAsync();
     }
 
+    public async Task SeedAsync(params AnalysisRecord[] records)
+    {
+        foreach (var record in records)
+        {
+            using var scope = Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<AnalysisStore>().AddAsync(record, CancellationToken.None);
+        }
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
