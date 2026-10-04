@@ -1,4 +1,4 @@
-using ComplianceMonitor.Api.Features.Analyze;
+using ComplianceMonitor.Api.Contracts;
 using ComplianceMonitor.Application.Compliance;
 using ComplianceMonitor.Application.Compliance.Models;
 using Microsoft.AspNetCore.Http.HttpResults;

@@ -4,7 +4,7 @@ using ComplianceMonitor.Infrastructure.Integrations.HuggingFace.Strategies;
 namespace ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
 
 /// <param name="TokenUpperBound">A guaranteed upper bound on the tokens the longest premise/hypothesis pair needs.</param>
-public sealed record ModelInputCheck(bool Fits, int TokenUpperBound, int MaxTokens);
+internal sealed record ModelInputCheck(bool Fits, int TokenUpperBound, int MaxTokens);
 
 /// <summary>
 /// bart-large-mnli reads at most 1024 tokens per premise/hypothesis pair, and Hugging Face silently truncates
@@ -13,14 +13,14 @@ public sealed record ModelInputCheck(bool Fits, int TokenUpperBound, int MaxToke
 /// The model uses byte-level BPE, where every token covers at least one UTF-8 byte, so the byte count is a
 /// hard upper bound on the token count. Conservative, but it needs no tokenizer and can never under-count.
 /// </summary>
-public static class ModelInputBudget
+internal static class ModelInputBudget
 {
     public const int MaxTokens = 1024;
 
     /// <summary>BART encodes a pair as &lt;s&gt; premise &lt;/s&gt;&lt;/s&gt; hypothesis &lt;/s&gt;.</summary>
     public const int SpecialTokens = 4;
 
-    public static ModelInputCheck Check(LabelPrompt prompt)
+    public static ModelInputCheck Check(ZeroShotPrompt prompt)
     {
         ArgumentNullException.ThrowIfNull(prompt);
         var longestHypothesis = prompt.Labels.Keys

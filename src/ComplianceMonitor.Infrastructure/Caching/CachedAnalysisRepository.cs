@@ -11,7 +11,7 @@ namespace ComplianceMonitor.Infrastructure.Caching;
 /// removes the cached summary, so this instance never serves a summary older than its own last write.
 /// HybridCache keeps it in memory today; adding a distributed L2 (e.g. Redis) later needs no change here.
 /// </summary>
-public sealed class CachedAnalysisRepository(AnalysisRepository inner, HybridCache cache) : IAnalysisRepository
+internal sealed class CachedAnalysisRepository(AnalysisRepository inner, HybridCache cache) : IAnalysisRepository
 {
     public static readonly TimeSpan SummaryLifetime = TimeSpan.FromSeconds(30);
 

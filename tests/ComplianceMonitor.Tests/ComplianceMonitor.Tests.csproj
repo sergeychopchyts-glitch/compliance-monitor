@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/ComplianceMonitor.Api/ComplianceMonitor.Api.csproj" />
     <ProjectReference Include="../../src/ComplianceMonitor.Application/ComplianceMonitor.Application.csproj" />
+    <ProjectReference Include="../../src/ComplianceMonitor.Infrastructure/ComplianceMonitor.Infrastructure.csproj" />
     <ProjectReference Include="../../tools/LabelLab/LabelLab.csproj" />
   </ItemGroup>
   <ItemGroup>

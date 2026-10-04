@@ -11,8 +11,8 @@ namespace ComplianceMonitor.Tests.LabelLab;
 
 public sealed class LabRunnerTests
 {
-    private const string Complies = PlaceholderLabelStrategy.CompliesLabel;
-    private const string Deviates = PlaceholderLabelStrategy.DeviatesLabel;
+    private const string Complies = PlaceholderPromptStrategy.CompliesLabel;
+    private const string Deviates = PlaceholderPromptStrategy.DeviatesLabel;
 
     private static readonly LabCase CompliesCase = new("Sent the email", "Emails must be sent", ComplianceResult.Complies, Brief: true);
     private static readonly LabCase NoGuidelineCase = new("Skipped torque check", "No guidelines exist for this case.", ComplianceResult.Unclear, Brief: true);
@@ -31,7 +31,7 @@ public sealed class LabRunnerTests
     };
 
     private static Task<IReadOnlyList<StrategyReport>> Run(HttpMessageHandler handler, params LabCase[] cases) =>
-        CreateRunner(handler).RunAsync([new PlaceholderLabelStrategy()], cases, TestContext.Current.CancellationToken);
+        CreateRunner(handler).RunAsync([new PlaceholderPromptStrategy()], cases, TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task RunAsync_ModelCase_ReportsPredictionTopScoreAndMargin()

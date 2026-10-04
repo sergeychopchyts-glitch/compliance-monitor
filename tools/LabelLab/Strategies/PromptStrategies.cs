@@ -7,17 +7,17 @@ namespace ComplianceMonitor.LabelLab.Strategies;
 /// Every strategy LabelLab measures: the production one, and the alternatives from docs/plan.md §3 that were
 /// measured and not chosen. Only the production strategy ships in the API.
 /// </summary>
-public static class LabelStrategies
+public static class PromptStrategies
 {
-    public static IReadOnlyList<ILabelStrategy> All { get; } =
+    public static IReadOnlyList<IPromptStrategy> All { get; } =
     [
-        new ComplianceZeroShotStrategy(),
-        new PlaceholderLabelStrategy(),
-        new GuidelineHypothesisStrategy(),
-        new IndependentScoresStrategy(),
+        new ComplianceZeroShotPromptStrategy(),
+        new PlaceholderPromptStrategy(),
+        new GuidelineHypothesisPromptStrategy(),
+        new IndependentScoresPromptStrategy(),
     ];
 
-    public static ILabelStrategy? Find(string? name) =>
+    public static IPromptStrategy? Find(string? name) =>
         All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>"Rebooted the server." → "Rebooted the server", so sentences can be joined without "..".</summary>

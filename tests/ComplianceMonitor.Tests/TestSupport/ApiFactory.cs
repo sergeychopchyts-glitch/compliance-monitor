@@ -57,7 +57,7 @@ public class ApiFactory : WebApplicationFactory<Program>
     /// <summary>Null leaves the token to the app's own configuration sources (e.g. the environment).</summary>
     protected virtual string? ApiToken => FakeToken;
 
-    public async Task<List<AnalysisEntity>> GetAnalysesAsync()
+    internal async Task<List<AnalysisEntity>> GetAnalysesAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ComplianceDbContext>();

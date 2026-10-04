@@ -23,7 +23,7 @@ public static class DependencyInjection
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>(DatabaseHealthCheck.Name, tags: [DatabaseHealthCheck.ReadyTag]);
 
         services.AddHuggingFaceClient(configuration);
-        services.AddSingleton<ILabelStrategy, ComplianceZeroShotStrategy>();
+        services.AddSingleton<IPromptStrategy, ComplianceZeroShotPromptStrategy>();
         services.AddTransient<IComplianceModelGateway, HuggingFaceComplianceModelGateway>();
 
         return services;

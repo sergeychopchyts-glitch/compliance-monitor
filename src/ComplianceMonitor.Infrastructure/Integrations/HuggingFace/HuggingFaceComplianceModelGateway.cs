@@ -10,11 +10,11 @@ namespace ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
 /// <see cref="IComplianceModelGateway"/> on Hugging Face zero-shot NLI. Everything provider-specific stops here:
 /// HF failures become <see cref="ModelGatewayException"/>, HF scores become a <see cref="ModelEvaluation"/>.
 /// </summary>
-public sealed class HuggingFaceComplianceModelGateway(
-    HuggingFaceZeroShotClient client, ILabelStrategy strategy, IOptions<HuggingFaceOptions> options) : IComplianceModelGateway
+internal sealed class HuggingFaceComplianceModelGateway(
+    HuggingFaceZeroShotClient client, IPromptStrategy strategy, IOptions<HuggingFaceOptions> options) : IComplianceModelGateway
 {
     private readonly HuggingFaceZeroShotClient _client = client;
-    private readonly ILabelStrategy _strategy = strategy;
+    private readonly IPromptStrategy _strategy = strategy;
     private readonly string _modelId = options.Value.Model;
 
     public async Task<ModelEvaluation> EvaluateAsync(string action, string guideline, CancellationToken cancellationToken)

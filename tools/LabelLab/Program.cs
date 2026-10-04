@@ -41,14 +41,14 @@ internal static class Program
         }
 
         // Same key and default as the API, so LabelLab predicts exactly what the API would return.
-        var threshold = configuration.GetValue($"{ComplianceSettings.SectionName}:{nameof(ComplianceSettings.ConfidenceThreshold)}", new ComplianceSettings().ConfidenceThreshold);
+        var threshold = configuration.GetValue($"{ComplianceOptions.SectionName}:{nameof(ComplianceOptions.ConfidenceThreshold)}", new ComplianceOptions().ConfidenceThreshold);
         var strategyFilter = configuration["strategy"];
-        var strategies = LabelStrategies.All
+        var strategies = PromptStrategies.All
             .Where(s => strategyFilter is null || s.Name.Equals(strategyFilter, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (strategies.Count == 0)
         {
-            Console.Error.WriteLine($"No label strategy found{(strategyFilter is null ? "" : $" named '{strategyFilter}'")}.");
+            Console.Error.WriteLine($"No prompt strategy found{(strategyFilter is null ? "" : $" named '{strategyFilter}'")}.");
             return 2;
         }
 

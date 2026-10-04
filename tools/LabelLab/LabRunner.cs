@@ -34,7 +34,7 @@ public sealed class LabRunner(HuggingFaceZeroShotClient client, string modelId, 
     private readonly double _confidenceThreshold = confidenceThreshold;
 
     public async Task<IReadOnlyList<StrategyReport>> RunAsync(
-        IEnumerable<ILabelStrategy> strategies, IReadOnlyList<LabCase> cases, CancellationToken cancellationToken)
+        IEnumerable<IPromptStrategy> strategies, IReadOnlyList<LabCase> cases, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(strategies);
         ArgumentNullException.ThrowIfNull(cases);
@@ -55,7 +55,7 @@ public sealed class LabRunner(HuggingFaceZeroShotClient client, string modelId, 
     }
 
     private async Task<CaseResult> RunCaseAsync(
-        ILabelStrategy strategy, int number, LabCase labCase, CancellationToken cancellationToken)
+        IPromptStrategy strategy, int number, LabCase labCase, CancellationToken cancellationToken)
     {
         var prompt = strategy.Build(labCase.Action, labCase.Guideline);
         try

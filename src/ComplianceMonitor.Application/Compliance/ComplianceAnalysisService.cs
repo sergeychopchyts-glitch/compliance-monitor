@@ -8,13 +8,13 @@ public sealed partial class ComplianceAnalysisService(
     IComplianceModelGateway model,
     IAnalysisRepository repository,
     TimeProvider timeProvider,
-    ComplianceSettings settings,
+    ComplianceOptions settings,
     ILogger<ComplianceAnalysisService> logger) : IComplianceAnalysisService
 {
     private readonly IComplianceModelGateway _model = model;
     private readonly IAnalysisRepository _repository = repository;
     private readonly TimeProvider _timeProvider = timeProvider;
-    private readonly ComplianceSettings _settings = settings;
+    private readonly ComplianceOptions _settings = settings;
     private readonly ILogger<ComplianceAnalysisService> _logger = logger;
 
     public async Task<AnalysisResult> AnalyzeAsync(string action, string guideline, CancellationToken cancellationToken)

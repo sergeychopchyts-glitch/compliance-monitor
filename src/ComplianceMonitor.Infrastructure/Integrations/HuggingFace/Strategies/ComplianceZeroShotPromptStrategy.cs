@@ -7,11 +7,11 @@ namespace ComplianceMonitor.Infrastructure.Integrations.HuggingFace.Strategies;
 /// label for each of COMPLIES, DEVIATES and UNCLEAR, as the brief suggests. Changing the wording is a new
 /// <see cref="Name"/>: stored analyses record which prompt produced them.
 /// </summary>
-public sealed class ComplianceZeroShotStrategy : ILabelStrategy
+public sealed class ComplianceZeroShotPromptStrategy : IPromptStrategy
 {
     public string Name => "combined-three-label-v1";
 
-    public LabelPrompt Build(string action, string guideline) =>
+    public ZeroShotPrompt Build(string action, string guideline) =>
         new(
             Inputs: $"Action: {AsClause(action)}. Guideline: {AsClause(guideline)}",
             HypothesisTemplate: "This action {}.",

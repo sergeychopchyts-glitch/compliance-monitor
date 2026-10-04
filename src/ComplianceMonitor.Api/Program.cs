@@ -34,11 +34,11 @@ builder.Services.AddExceptionHandler<ModelGatewayExceptionHandler>();
 
 // Composition root: Application use case + Infrastructure implementations.
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddOptions<ComplianceSettings>()
-    .Bind(builder.Configuration.GetSection(ComplianceSettings.SectionName))
+builder.Services.AddOptions<ComplianceOptions>()
+    .Bind(builder.Configuration.GetSection(ComplianceOptions.SectionName))
     .Validate(s => s.ConfidenceThreshold is >= 0 and <= 1, "Compliance:ConfidenceThreshold must be between 0 and 1.")
     .ValidateOnStart();
-builder.Services.AddSingleton(provider => provider.GetRequiredService<IOptions<ComplianceSettings>>().Value);
+builder.Services.AddSingleton(provider => provider.GetRequiredService<IOptions<ComplianceOptions>>().Value);
 builder.Services.AddScoped<IComplianceAnalysisService, ComplianceAnalysisService>();
 builder.Services.AddInfrastructure(builder.Configuration);
 

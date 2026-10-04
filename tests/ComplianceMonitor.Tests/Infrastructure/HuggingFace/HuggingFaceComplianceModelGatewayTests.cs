@@ -24,7 +24,7 @@ public sealed class HuggingFaceComplianceModelGatewayTests
     private static HuggingFaceComplianceModelGateway CreateGateway(FakeHttpMessageHandler hf)
     {
         var options = new HuggingFaceOptions { ApiToken = Token };
-        return new(TestClients.HuggingFace(hf, options), new ComplianceZeroShotStrategy(), Options.Create(options));
+        return new(TestClients.HuggingFace(hf, options), new ComplianceZeroShotPromptStrategy(), Options.Create(options));
     }
 
     private static FakeHttpMessageHandler Responding(params (string Label, double Score)[] scores) =>

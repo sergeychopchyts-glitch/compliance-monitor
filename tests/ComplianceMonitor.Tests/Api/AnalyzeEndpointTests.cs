@@ -260,8 +260,9 @@ public sealed class AnalyzeEndpointTests
     [Fact]
     public void Contracts_DoNotExposeProviderOrPersistenceTypes()
     {
-        var contracts = typeof(ComplianceMonitor.Api.Features.Analyze.AnalysisResponse).Assembly.GetTypes()
-            .Where(t => t.Namespace?.StartsWith("ComplianceMonitor.Api.Features", StringComparison.Ordinal) == true);
+        var contracts = typeof(ComplianceMonitor.Api.Contracts.AnalysisResponse).Assembly.GetTypes()
+            .Where(t => t.Namespace?.StartsWith("ComplianceMonitor.Api.Features", StringComparison.Ordinal) == true
+                || t.Namespace == "ComplianceMonitor.Api.Contracts");
 
         var leaks = contracts
             .SelectMany(t => t.GetProperties().Select(p => (t, p.PropertyType)))
@@ -269,6 +270,7 @@ public sealed class AnalyzeEndpointTests
             .Select(x => $"{x.t.Name}: {x.PropertyType.Name}")
             .ToList();
 
+        Assert.Contains(contracts, t => t == typeof(ComplianceMonitor.Api.Contracts.AnalysisResponse));
         Assert.Empty(leaks);
     }
 }
@@ -303,7 +305,7 @@ public sealed class AnalyzeWiringTests
         Assert.Equal(ComplianceResult.Complies, row.Result);
         Assert.Equal("HuggingFace", row.ModelProvider);
         Assert.Equal("facebook/bart-large-mnli", row.ModelId);
-        Assert.Equal(new ComplianceZeroShotStrategy().Name, row.Strategy);
+        Assert.Equal(new ComplianceZeroShotPromptStrategy().Name, row.Strategy);
     }
 
     [Fact]
@@ -431,7 +433,7 @@ public sealed class AnalyzeWiringTests
         var client = scope.ServiceProvider.GetRequiredService<HuggingFaceZeroShotClient>();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.ClassifyAsync(new ComplianceZeroShotStrategy().Build("a", "b").ToRequest(), Ct));
+            () => client.ClassifyAsync(new ComplianceZeroShotPromptStrategy().Build("a", "b").ToRequest(), Ct));
 
         Assert.Equal(NoNetworkHandler.Message, ex.Message);
     }

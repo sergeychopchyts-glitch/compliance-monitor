@@ -48,7 +48,7 @@ public sealed class BriefCaseLiveTests
             provider.GetRequiredService<IComplianceModelGateway>(),
             new DiscardingRepository(),
             TimeProvider.System,
-            new ComplianceSettings(),
+            new ComplianceOptions(),
             NullLogger<ComplianceAnalysisService>.Instance);
 
         var result = await service.AnalyzeAsync(action, guideline, TestContext.Current.CancellationToken);

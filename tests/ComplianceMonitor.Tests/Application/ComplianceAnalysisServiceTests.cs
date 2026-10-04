@@ -25,7 +25,7 @@ public sealed class ComplianceAnalysisServiceTests
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 10, 3, 10, 15, 0, 789, TimeSpan.Zero));
 
     private ComplianceAnalysisService CreateService() =>
-        new(_model, _repository, _time, new ComplianceSettings { ConfidenceThreshold = 0.5 }, NullLogger<ComplianceAnalysisService>.Instance);
+        new(_model, _repository, _time, new ComplianceOptions { ConfidenceThreshold = 0.5 }, NullLogger<ComplianceAnalysisService>.Instance);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

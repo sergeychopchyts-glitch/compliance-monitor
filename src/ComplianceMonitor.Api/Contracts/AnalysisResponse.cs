@@ -1,8 +1,8 @@
 using ComplianceMonitor.Application.Compliance.Models;
 
-namespace ComplianceMonitor.Api.Features.Analyze;
+namespace ComplianceMonitor.Api.Contracts;
 
-/// <summary>One analysis, as returned by POST /analyze and GET /history.</summary>
+/// <summary>One analysis, as returned by POST /analyze and GET /history: shared, so it lives outside either feature.</summary>
 /// <param name="Confidence">The model's score for <paramref name="Result"/>, rounded to 2 decimals; null when a policy decided.</param>
 /// <param name="Timestamp">UTC, serialized with a trailing Z.</param>
 public sealed record AnalysisResponse(

@@ -23,7 +23,7 @@ public sealed class HuggingFaceResilienceTests : IDisposable
     private const string Token = "hf_resilience_secret";
     private const string Ok = """[{"label":"complies with the guideline","score":0.9},{"label":"violates the guideline","score":0.1}]""";
 
-    private static readonly ZeroShotRequest Request = new ComplianceZeroShotStrategy().Build("action", "guideline").ToRequest();
+    private static readonly ZeroShotRequest Request = new ComplianceZeroShotPromptStrategy().Build("action", "guideline").ToRequest();
 
     private readonly CapturingLoggerProvider _logs = new();
     private readonly FakeTimeProvider _time = new();

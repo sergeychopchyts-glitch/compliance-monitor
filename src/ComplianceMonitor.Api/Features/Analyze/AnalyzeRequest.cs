@@ -9,8 +9,8 @@ namespace ComplianceMonitor.Api.Features.Analyze;
 /// </summary>
 public sealed record AnalyzeRequest(
     [property: Required(ErrorMessage = "The action is required.")]
-    [property: MaxLength(ComplianceSettings.MaxTextLength, ErrorMessage = "The action must be at most 2000 characters.")]
+    [property: MaxLength(ComplianceConstraints.MaxTextLength, ErrorMessage = "The action must be at most 2000 characters.")]
     string Action,
     [property: Required(ErrorMessage = "The guideline is required.")]
-    [property: MaxLength(ComplianceSettings.MaxTextLength, ErrorMessage = "The guideline must be at most 2000 characters.")]
+    [property: MaxLength(ComplianceConstraints.MaxTextLength, ErrorMessage = "The guideline must be at most 2000 characters.")]
     string Guideline);

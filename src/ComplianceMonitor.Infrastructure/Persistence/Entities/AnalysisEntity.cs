@@ -3,7 +3,7 @@ using ComplianceMonitor.Application.Compliance.Models;
 namespace ComplianceMonitor.Infrastructure.Persistence.Entities;
 
 /// <summary>One stored analysis: the decision, and the audit trail of how it was reached.</summary>
-public sealed class AnalysisEntity
+internal sealed class AnalysisEntity
 {
     public long Id { get; set; }
 

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
 
 /// <summary>The typed Hugging Face client and its resilience pipeline.</summary>
-public static class HuggingFaceResilience
+internal static class HuggingFaceResilience
 {
     /// <summary>
     /// Slack between the pipeline's total timeout and HttpClient.Timeout. HttpClient.Timeout is only a

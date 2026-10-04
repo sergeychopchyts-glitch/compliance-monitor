@@ -14,6 +14,10 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <!-- Tests exercise implementation types (repository, gateway, cache) that aren't part of the public surface. -->
+    <InternalsVisibleTo Include="ComplianceMonitor.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../ComplianceMonitor.Application/ComplianceMonitor.Application.csproj" />
   </ItemGroup>
 </Project>

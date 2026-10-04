@@ -11,7 +11,7 @@ public sealed class ModelInputBudgetTests
     private const int Overhead = 67;
 
     private static ModelInputCheck Check(string action, string guideline) =>
-        ModelInputBudget.Check(new ComplianceZeroShotStrategy().Build(action, guideline));
+        ModelInputBudget.Check(new ComplianceZeroShotPromptStrategy().Build(action, guideline));
 
     [Fact]
     public void Check_BriefCase_FitsWithAnUpperBoundFromBytes()
@@ -44,7 +44,7 @@ public sealed class ModelInputBudgetTests
     [Fact]
     public void Check_UsesTheLongestHypothesis()
     {
-        var prompt = new LabelPrompt("x", "{}", MultiLabel: false, new Dictionary<string, ComplianceResult>
+        var prompt = new ZeroShotPrompt("x", "{}", MultiLabel: false, new Dictionary<string, ComplianceResult>
         {
             ["short"] = ComplianceResult.Complies,
             [new string('h', 100)] = ComplianceResult.Deviates,

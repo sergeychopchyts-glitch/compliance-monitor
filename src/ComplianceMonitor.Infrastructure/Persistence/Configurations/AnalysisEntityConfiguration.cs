@@ -6,14 +6,14 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ComplianceMonitor.Infrastructure.Persistence.Configurations;
 
-public sealed class AnalysisEntityConfiguration : IEntityTypeConfiguration<AnalysisEntity>
+internal sealed class AnalysisEntityConfiguration : IEntityTypeConfiguration<AnalysisEntity>
 {
     public void Configure(EntityTypeBuilder<AnalysisEntity> builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.ToTable("Analyses");
-        builder.Property(a => a.Action).HasMaxLength(ComplianceSettings.MaxTextLength);
-        builder.Property(a => a.Guideline).HasMaxLength(ComplianceSettings.MaxTextLength);
+        builder.Property(a => a.Action).HasMaxLength(ComplianceConstraints.MaxTextLength);
+        builder.Property(a => a.Guideline).HasMaxLength(ComplianceConstraints.MaxTextLength);
         builder.Property(a => a.Result).HasConversion(v => DbNames.Of(v), v => DbNames.ToResult(v)).HasMaxLength(16);
         builder.Property(a => a.ModelTopResult).HasConversion(v => DbNames.Of(v!.Value), v => DbNames.ToResult(v)).HasMaxLength(16);
         builder.Property(a => a.DecisionSource).HasConversion(v => DbNames.Of(v), v => DbNames.ToSource(v)).HasMaxLength(16);
@@ -32,7 +32,7 @@ public sealed class AnalysisEntityConfiguration : IEntityTypeConfiguration<Analy
 }
 
 /// <summary>Explicit database names for the enums, so the table reads like the API and renaming a C# member can't change stored data.</summary>
-public static class DbNames
+internal static class DbNames
 {
     public static string Of(ComplianceResult value) => value switch
     {

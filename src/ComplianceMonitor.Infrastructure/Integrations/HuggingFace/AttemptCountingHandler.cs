@@ -4,7 +4,7 @@ namespace ComplianceMonitor.Infrastructure.Integrations.HuggingFace;
 /// Sits inside the retry pipeline and counts attempts on the request, so the client can log
 /// how many attempts one classification took.
 /// </summary>
-public sealed class AttemptCountingHandler : DelegatingHandler
+internal sealed class AttemptCountingHandler : DelegatingHandler
 {
     public static readonly HttpRequestOptionsKey<int> AttemptsKey = new("ComplianceMonitor.Attempts");
 

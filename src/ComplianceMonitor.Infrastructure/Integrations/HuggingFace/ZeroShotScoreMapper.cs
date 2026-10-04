@@ -13,7 +13,7 @@ public static class ZeroShotScoreMapper
     public const string Provider = "HuggingFace";
 
     /// <exception cref="HuggingFacePermanentException">The labels returned are not exactly the labels sent.</exception>
-    public static ModelEvaluation ToEvaluation(IReadOnlyList<LabelScore> scores, LabelPrompt prompt, string modelId, string strategy)
+    public static ModelEvaluation ToEvaluation(IReadOnlyList<LabelScore> scores, ZeroShotPrompt prompt, string modelId, string strategy)
     {
         ArgumentNullException.ThrowIfNull(scores);
         ArgumentNullException.ThrowIfNull(prompt);

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ComplianceMonitor.Infrastructure.Persistence.Repositories;
 
-public sealed class AnalysisRepository(ComplianceDbContext db) : IAnalysisRepository
+internal sealed class AnalysisRepository(ComplianceDbContext db) : IAnalysisRepository
 {
     private readonly ComplianceDbContext _db = db;
 

@@ -13,15 +13,15 @@ public sealed class AlternativeStrategyTests
     [Fact]
     public void All_StartsWithProductionAndHasUniqueNames()
     {
-        Assert.IsType<ComplianceZeroShotStrategy>(LabelStrategies.All[0]);
-        Assert.Equal(LabelStrategies.All.Count, LabelStrategies.All.Select(s => s.Name).Distinct().Count());
-        Assert.IsType<GuidelineHypothesisStrategy>(LabelStrategies.Find("GUIDELINE-HYPOTHESIS"));
+        Assert.IsType<ComplianceZeroShotPromptStrategy>(PromptStrategies.All[0]);
+        Assert.Equal(PromptStrategies.All.Count, PromptStrategies.All.Select(s => s.Name).Distinct().Count());
+        Assert.IsType<GuidelineHypothesisPromptStrategy>(PromptStrategies.Find("GUIDELINE-HYPOTHESIS"));
     }
 
     [Fact]
     public void Placeholder_TwoLabelsFromTheRecordedResponse()
     {
-        var prompt = new PlaceholderLabelStrategy().Build(Action, Guideline);
+        var prompt = new PlaceholderPromptStrategy().Build(Action, Guideline);
 
         Assert.Equal($"Action: {Action}\nGuideline: {Guideline}", prompt.Inputs);
         Assert.Equal(["complies with the guideline", "violates the guideline"], prompt.Labels.Keys);
@@ -30,7 +30,7 @@ public sealed class AlternativeStrategyTests
     [Fact]
     public void GuidelineHypothesis_PutsTheGuidelineInEachLabel()
     {
-        var prompt = new GuidelineHypothesisStrategy().Build(Action, Guideline);
+        var prompt = new GuidelineHypothesisPromptStrategy().Build(Action, Guideline);
 
         Assert.Equal("Rebooted the server and checked logs.", prompt.Inputs);
         Assert.Equal(
@@ -45,7 +45,7 @@ public sealed class AlternativeStrategyTests
     [Fact]
     public void IndependentScores_ScoresTwoLabelsIndependently()
     {
-        var prompt = new IndependentScoresStrategy().Build(Action, Guideline);
+        var prompt = new IndependentScoresPromptStrategy().Build(Action, Guideline);
 
         Assert.True(prompt.MultiLabel);
         Assert.Equal(["complies with the guideline", "violates the guideline"], prompt.Labels.Keys);
