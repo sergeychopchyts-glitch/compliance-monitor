@@ -309,6 +309,19 @@ public sealed class ClientAppTests
     }
 
     [Fact]
+    public async Task TooManyRequests_Exits3WithTheApiMessage()
+    {
+        var api = FakeApi.Always(() => FakeApi.Json(HttpStatusCode.TooManyRequests,
+            """{"type":"urn:compliance-monitor:problem:too-many-analyses","title":"Too many analyses are running. Try again shortly.","status":429}""", ProblemJson));
+
+        var run = await RunClient(api, ["analyze", "--action", "a", "--guideline", "g"]);
+
+        Assert.Equal(3, run.ExitCode);
+        Assert.Contains("The API returned 429: Too many analyses are running. Try again shortly.", run.Error, StringComparison.Ordinal);
+        AssertNoStackTrace(run);
+    }
+
+    [Fact]
     public async Task ServiceUnavailableWithRetryAfter_ShowsIt()
     {
         var api = FakeApi.Always(() =>

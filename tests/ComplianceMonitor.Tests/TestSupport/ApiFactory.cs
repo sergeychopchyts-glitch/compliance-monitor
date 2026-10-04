@@ -134,11 +134,23 @@ public sealed class FakeModelGateway : IComplianceModelGateway
 
     public Exception? Throws { get; set; }
 
+    /// <summary>When set, every call waits for it: lets a test hold requests "in flight".</summary>
+    public TaskCompletionSource? Hold { get; set; }
+
     public List<(string Action, string Guideline)> Calls { get; } = [];
 
-    public Task<ModelEvaluation> EvaluateAsync(string action, string guideline, CancellationToken cancellationToken)
+    public async Task<ModelEvaluation> EvaluateAsync(string action, string guideline, CancellationToken cancellationToken)
     {
-        Calls.Add((action, guideline));
-        return Throws is null ? Task.FromResult(Evaluation) : Task.FromException<ModelEvaluation>(Throws);
+        lock (Calls)
+        {
+            Calls.Add((action, guideline));
+        }
+
+        if (Hold is { } hold)
+        {
+            await hold.Task.WaitAsync(cancellationToken);
+        }
+
+        return Throws is null ? Evaluation : throw Throws;
     }
 }

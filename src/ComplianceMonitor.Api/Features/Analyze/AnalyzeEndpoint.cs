@@ -1,3 +1,4 @@
+using ComplianceMonitor.Api.RateLimiting;
 using ComplianceMonitor.Application.Compliance;
 using Microsoft.AspNetCore.Http.HttpResults;
 
@@ -10,7 +11,9 @@ public static class AnalyzeEndpoint
         group.MapPost("/analyze", AnalyzeAsync)
             .WithName("Analyze")
             .WithSummary("Classify an action against a guideline and store the result.")
+            .RequireRateLimiting(AnalyzeRateLimitOptions.PolicyName)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status504GatewayTimeout);
