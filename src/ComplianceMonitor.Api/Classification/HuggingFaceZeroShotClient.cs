@@ -20,16 +20,24 @@ public sealed record ZeroShotParameters(
 
 /// <summary>
 /// Typed client for the Hugging Face zero-shot classification endpoint.
-/// Retries and the overall timeout come from the resilience handler registered with it.
+/// Retries and timeouts come from the resilience pipeline registered with it
+/// (see <see cref="ClassificationServiceCollectionExtensions"/>). Logs one line per call; never the token or headers.
 /// </summary>
-public sealed class HuggingFaceZeroShotClient(HttpClient httpClient, IOptions<HuggingFaceOptions> options)
+public sealed partial class HuggingFaceZeroShotClient(
+    HttpClient httpClient,
+    IOptions<HuggingFaceOptions> options,
+    ILogger<HuggingFaceZeroShotClient> logger,
+    TimeProvider timeProvider)
 {
     private readonly HttpClient _httpClient = httpClient;
     private readonly HuggingFaceOptions _options = options.Value;
+    private readonly ILogger<HuggingFaceZeroShotClient> _logger = logger;
+    private readonly TimeProvider _timeProvider = timeProvider;
 
     public async Task<IReadOnlyList<LabelScore>> ClassifyAsync(ZeroShotRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var started = _timeProvider.GetTimestamp();
 
         using var message = new HttpRequestMessage(HttpMethod.Post, _options.ModelUrl)
         {
@@ -38,25 +46,65 @@ public sealed class HuggingFaceZeroShotClient(HttpClient httpClient, IOptions<Hu
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiToken);
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        using var response = await SendAsync(message, cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw ToException(response);
-        }
-
-        string body;
+        int? status = null;
         try
         {
-            body = await response.Content.ReadAsStringAsync(cancellationToken);
-        }
-        catch (Exception ex) when (IsTimeout(ex, cancellationToken))
-        {
-            throw HuggingFaceTransientException.Timeout(_options.TimeoutSeconds, ex);
-        }
+            using var response = await SendAsync(message, cancellationToken);
 
-        return Parse(body);
+            // When the caller cancels between attempts, the retry pipeline stops and hands back the last
+            // response (e.g. a 503) instead of throwing. That is a cancellation, not an upstream failure.
+            cancellationToken.ThrowIfCancellationRequested();
+            status = (int)response.StatusCode;
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw ToException(response);
+            }
+
+            string body;
+            try
+            {
+                body = await response.Content.ReadAsStringAsync(cancellationToken);
+            }
+            catch (Exception ex) when (IsTimeout(ex, cancellationToken))
+            {
+                throw HuggingFaceTransientException.Timeout(_options.TimeoutSeconds, ex);
+            }
+
+            var scores = Parse(body);
+            LogCall(LogLevel.Information, "succeeded", status, message, started);
+            return scores;
+        }
+        catch (HuggingFaceException ex)
+        {
+            var outcome = ex switch
+            {
+                HuggingFaceTransientException { IsTimeout: true } => "timed out",
+                HuggingFaceTransientException => "failed (transient)",
+                HuggingFacePermanentException { IsMalformedResponse: true } => "failed (malformed response)",
+                _ => "failed (permanent)",
+            };
+            LogCall(LogLevel.Warning, outcome, ex.UpstreamStatusCode ?? status, message, started);
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            LogCall(LogLevel.Information, "cancelled by caller", status, message, started);
+            throw;
+        }
     }
+
+    private void LogCall(LogLevel level, string outcome, int? status, HttpRequestMessage message, long started)
+    {
+        // Counted by AttemptCountingHandler inside the retry pipeline; absent when the client is used without it.
+        var attempts = message.Options.TryGetValue(AttemptCountingHandler.AttemptsKey, out var counted) && counted > 0 ? counted : 1;
+        var elapsedMs = (long)_timeProvider.GetElapsedTime(started).TotalMilliseconds;
+        LogHuggingFaceCall(_logger, level, outcome, status, attempts, elapsedMs);
+    }
+
+    [LoggerMessage(Message = "Hugging Face call {Outcome}: status {StatusCode}, {Attempts} attempt(s), {ElapsedMs} ms")]
+    private static partial void LogHuggingFaceCall(
+        ILogger logger, LogLevel level, string outcome, int? statusCode, int attempts, long elapsedMs);
 
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage message, CancellationToken cancellationToken)
     {

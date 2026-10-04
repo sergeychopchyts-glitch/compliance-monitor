@@ -17,7 +17,7 @@ public sealed class ComplianceClassifierTests
     {
         var options = Options.Create(new HuggingFaceOptions { ApiToken = "token", ConfidenceFloor = confidenceFloor });
         return new ComplianceClassifier(
-            new HuggingFaceZeroShotClient(new HttpClient(handler), options), new PlaceholderLabelStrategy(), options);
+            TestClients.HuggingFace(handler, options.Value), new PlaceholderLabelStrategy(), options);
     }
 
     private static FakeHttpMessageHandler Responding(params (string Label, double Score)[] scores) =>

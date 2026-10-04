@@ -41,14 +41,23 @@ public sealed class HuggingFaceOptionsTests
         });
 
         Assert.True(result.Failed);
-        Assert.Equal(4, result.Failures.Count());
+        Assert.Equal(5, result.Failures.Count());
         Assert.Contains("HuggingFace:BaseUrl", result.FailureMessage, StringComparison.Ordinal);
         Assert.Contains("HuggingFace:Model", result.FailureMessage, StringComparison.Ordinal);
         Assert.Contains("HuggingFace:TimeoutSeconds", result.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("HuggingFace:AttemptTimeoutSeconds", result.FailureMessage, StringComparison.Ordinal);
         Assert.Contains("HuggingFace:ConfidenceFloor", result.FailureMessage, StringComparison.Ordinal);
         Assert.DoesNotContain(SecretToken, result.FailureMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("insecure.example", result.FailureMessage, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(30, 1, true)]
+    [InlineData(30, 30, true)]
+    [InlineData(30, 31, false)]
+    [InlineData(30, 0, false)]
+    public void Validate_AttemptTimeoutMustFitInTotal(int total, int attempt, bool valid) =>
+        Assert.Equal(valid, Validate(new HuggingFaceOptions { ApiToken = SecretToken, TimeoutSeconds = total, AttemptTimeoutSeconds = attempt }).Succeeded);
 
     [Theory]
     [InlineData(-0.01, false)]

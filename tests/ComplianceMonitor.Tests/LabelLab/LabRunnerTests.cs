@@ -17,7 +17,7 @@ public sealed class LabRunnerTests
     private static readonly LabCase NoGuidelineCase = new("Skipped torque check", "No guidelines exist for this case.", ComplianceResult.Unclear, Brief: true);
 
     private static LabRunner CreateRunner(HttpMessageHandler handler) =>
-        new(new HuggingFaceZeroShotClient(new HttpClient(handler), Options.Create(new HuggingFaceOptions { ApiToken = "token" })), 0.5);
+        new(TestClients.HuggingFace(handler), 0.5);
 
     private static HttpResponseMessage Scores(double complies, double deviates) => new(HttpStatusCode.OK)
     {

@@ -68,6 +68,7 @@ internal static class Program
 
         var services = new ServiceCollection();
         services.AddSingleton(Options.Create(options));
+        services.AddSingleton(TimeProvider.System);
         services.AddHttpClient<HuggingFaceZeroShotClient>(client => client.Timeout = Timeout.InfiniteTimeSpan)
             .AddHttpMessageHandler(() => cacheHandler) // outermost: cache hits skip retries and throttling
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan) // the single handler instance must never be rebuilt

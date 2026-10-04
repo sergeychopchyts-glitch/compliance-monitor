@@ -13,8 +13,11 @@ public sealed class HuggingFaceOptions
     /// <summary>Secret. Comes from user-secrets or the HuggingFace__ApiToken environment variable only.</summary>
     public string ApiToken { get; set; } = "";
 
-    /// <summary>Total budget for one classification, including retries.</summary>
+    /// <summary>Total budget for one classification, including retries and backoff.</summary>
     public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Budget for a single HTTP attempt; a slower attempt is cancelled and retried.</summary>
+    public int AttemptTimeoutSeconds { get; set; } = 10;
 
     /// <summary>A top score below this gives UNCLEAR with <see cref="DecisionSource.LowConfidence"/>.</summary>
     public double ConfidenceFloor { get; set; } = 0.5;
@@ -56,6 +59,13 @@ public sealed class HuggingFaceOptionsValidator : IValidateOptions<HuggingFaceOp
         if (options.TimeoutSeconds is < 1 or > MaxTimeoutSeconds)
         {
             failures.Add($"{section}:{nameof(options.TimeoutSeconds)} must be between 1 and {MaxTimeoutSeconds}.");
+        }
+
+        if (options.AttemptTimeoutSeconds < 1 || options.AttemptTimeoutSeconds > options.TimeoutSeconds)
+        {
+            failures.Add(
+                $"{section}:{nameof(options.AttemptTimeoutSeconds)} must be between 1 and " +
+                $"{section}:{nameof(options.TimeoutSeconds)}.");
         }
 
         if (!double.IsFinite(options.ConfidenceFloor) || options.ConfidenceFloor is < 0 or > 1)

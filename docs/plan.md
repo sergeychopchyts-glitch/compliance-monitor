@@ -19,7 +19,7 @@ Shared settings in `Directory.Build.props`, versions in `Directory.Packages.prop
 3. `IComplianceClassifier.ClassifyAsync(action, guideline, ct)`:
    1. **Rule:** if the guideline says no guideline exists (short case-insensitive phrase list, `NoGuidelineRule`) → UNCLEAR, `DecidedBy=RULE`, confidence 1.0, no HTTP call.
    2. The active `ILabelStrategy` builds the HF payload (`inputs`, `candidate_labels`, `hypothesis_template`, `multi_label`).
-   3. POST through a typed `HttpClient` with `AddStandardResilienceHandler`: retries 429 / 5xx / timeouts with backoff (honours `Retry-After`), never 400/401/402/403; 30 s total budget.
+   3. POST through a typed `HttpClient` with `AddStandardResilienceHandler`: up to 3 retries with exponential backoff and jitter on 408 / 429 / 5xx / network errors / attempt timeouts, honouring `Retry-After`; never 400/401/402/403. `HuggingFace:AttemptTimeoutSeconds` (10) per attempt, `HuggingFace:TimeoutSeconds` (30) in total; `HttpClient.Timeout` is a backstop 10 s above the total. One structured log line per call: outcome, status, attempts, latency.
    4. Failures throw `HuggingFaceTransientException` (timeout, network, 408, 429, 5xx) or `HuggingFacePermanentException` (other 4xx incl. 400/401/402/403, malformed body). Both carry the upstream status (table in 4).
    5. Parse `[{label, score}]` (also legacy `{labels, scores}`), map **by label text**; the response must contain exactly the labels sent, else `Malformed`. Top score below `ConfidenceFloor` → UNCLEAR, `DecidedBy=LOW_CONFIDENCE`; otherwise the top label's result, `DecidedBy=MODEL`.
 4. `timestamp = TimeProvider.GetUtcNow()`, truncated to whole seconds (**A**, matches the brief's example).

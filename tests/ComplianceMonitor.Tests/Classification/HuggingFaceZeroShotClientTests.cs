@@ -17,7 +17,7 @@ public sealed class HuggingFaceZeroShotClientTests
         new ZeroShotParameters(["complies with the guideline", "violates the guideline"], "This action {}.", false));
 
     private static HuggingFaceZeroShotClient CreateClient(HttpMessageHandler handler) =>
-        new(new HttpClient(handler), Options.Create(new HuggingFaceOptions { ApiToken = Token }));
+        TestClients.HuggingFace(handler, new HuggingFaceOptions { ApiToken = Token });
 
     private static Task<IReadOnlyList<LabelScore>> Classify(HttpMessageHandler handler) =>
         CreateClient(handler).ClassifyAsync(Request, TestContext.Current.CancellationToken);
