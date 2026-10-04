@@ -492,3 +492,6 @@ PROCESS-LOG.md
 
 # LabelLab response cache
 .cache/
+
+# CI test output
+test-output.txt

@@ -22,7 +22,16 @@ jobs:
 
       # Live tests are explicit, so this never calls Hugging Face; no token is needed or available here.
       - name: Test
-        run: dotnet test --no-build --configuration Release
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test --no-build --configuration Release 2>&1 | tee test-output.txt
+
+      # Job logs need a GitHub login; annotations are public. Show each failing test as one.
+      - name: Annotate test failures
+        if: failure() && steps.test.outcome == 'failure'
+        run: python3 .github/scripts/annotate-test-failures.py test-output.txt
 
       - name: Check formatting
         run: dotnet format --verify-no-changes --no-restore
