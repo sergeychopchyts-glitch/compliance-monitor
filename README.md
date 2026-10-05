@@ -128,7 +128,7 @@ The three-label prompt ships because it gives the model an explicit UNCLEAR, as 
 
 ```bash
 dotnet test                                                    # deterministic; no network calls
-dotnet test -- --filter-trait "Category=Live" --explicit on    # the 4 brief cases against real HF (needs a token)
+dotnet test tests/ComplianceMonitor.Tests -- --filter-trait "Category=Live" --explicit on    # the 4 brief cases against real HF (needs a token)
 dotnet run --project tools/LabelLab                            # prompt measurement, cached in .cache/hf/
 ```
 
@@ -139,7 +139,7 @@ dotnet run --project tools/LabelLab                            # prompt measurem
   - `Live/`, `LabelLab/`, and architecture tests that enforce the dependency rule.
 - A guard handler fails any non-Live test that tries to reach the network.
 - `tests/ComplianceMonitor.Client.Tests` drives the client end to end over a fake API.
-- **Live tests** are `[Theory(Explicit = true)]`, so plain `dotnet test` never runs them, even with a token configured. Don't use `--filter "Category=Live"`: it selects them but runs nothing.
+- **Live tests** are `[Theory(Explicit = true)]`, so plain `dotnet test` never runs them, even with a token configured. Don't use `--filter "Category=Live"`: it selects them but runs nothing. Target the test project as shown: run solution-wide, the client test project matches zero Live tests and the run exits with code 8 even though all four pass.
 - **CI** (`.github/workflows/ci.yml`) restores, builds in Release, runs the non-live tests, checks formatting, and publishes any failing test as a public annotation.
 
 ## Architecture
