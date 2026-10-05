@@ -1,5 +1,13 @@
 # Design plan
 
+> **Status:** Initial implementation plan, agreed 2026-10-03.
+>
+> This document is intentionally retained as the working plan used to direct the initial implementation. It has not been rewritten to mirror the final architecture because several design decisions changed after implementation, live model testing, and subsequent code review.
+>
+> For the review findings and refactoring decisions that followed this plan, see `PROCESS.md`.
+>
+> For the current system architecture, setup, behavior, and production considerations, see `README.md`.
+
 Status: agreed (2026-10-03). Assumptions are marked **A**, open questions **Q** (section 7).
 
 > **Current architecture (refactor, 2026-10-04).** Where this plan conflicts with the code, the code and README win. In particular:

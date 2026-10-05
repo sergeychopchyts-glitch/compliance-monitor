@@ -7,7 +7,7 @@
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The composition root: references Infrastructure only to register its implementations. -->
+    <!-- Composition root: references Infrastructure for dependency registration and infrastructure startup concerns. -->
     <ProjectReference Include="../ComplianceMonitor.Application/ComplianceMonitor.Application.csproj" />
     <ProjectReference Include="../ComplianceMonitor.Infrastructure/ComplianceMonitor.Infrastructure.csproj" />
   </ItemGroup>

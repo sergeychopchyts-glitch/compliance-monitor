@@ -159,7 +159,8 @@ Dependencies point inwards: **Api → Application ← Infrastructure**. The API 
 
 **Why Minimal APIs.** Three endpoints don't need controllers. The handlers are thin: they bind, call the service and map the result.
 
-**Caching.** Only `/summary` is cached, with `HybridCache` (in-memory today; adding a Redis L2 later needs no code change). `/analyze` is an audited write and is never cached; history is a cheap indexed page.
+**Caching.** Only `/summary` is cached, with `HybridCache`. `/analyze` is an audited write and is never cached; history is a cheap indexed page.
+HybridCache currently uses local in-memory storage. A horizontally scaled production deployment can add a distributed backing store such as Redis through infrastructure configuration/registration without requiring an application-layer redesign.
 
 **Rate limiting.** `POST /analyze` has a concurrency limit (`RateLimiting:Analyze:PermitLimit` 4, `QueueLimit` 2), because each request holds an external model call open for up to 30 s. The other endpoints aren't limited.
 
